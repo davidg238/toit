@@ -24,13 +24,18 @@
 
 // The registry is the devicetree partition labelled `toit_partition`, mapped
 // into the data address space so programs run from flash in place. This is
-// flash_registry_esp32.cc with esp_partition_* replaced by Zephyr's flash API;
-// the memory map itself is Espressif-specific until another SoC needs it.
+// flash_registry_esp32.cc with esp_partition_* replaced by Zephyr's flash API.
+// Espressif flash sits behind an MMU and must be mapped (spi_flash_mmap); on
+// SoCs with memory-mapped internal flash (nRF) the partition is read at the
+// flash node's base address plus its offset.
 #if !DT_NODE_EXISTS(DT_NODELABEL(toit_partition))
 #error "the board devicetree needs a toit_partition (see ztoit's board overlay)"
 #endif
 
+#ifdef CONFIG_SOC_FAMILY_ESPRESSIF_ESP32
 #include <spi_flash_mmap.h>
+#define TOIT_FLASH_MMAP 1
+#endif
 
 namespace toit {
 
@@ -38,7 +43,9 @@ static const struct device* const flash_device = FIXED_PARTITION_DEVICE(toit_par
 static const off_t partition_offset = FIXED_PARTITION_OFFSET(toit_partition);
 static const size_t partition_size = FIXED_PARTITION_SIZE(toit_partition);
 
+#ifdef TOIT_FLASH_MMAP
 static spi_flash_mmap_handle_t allocations_handle;
+#endif
 uint8* FlashRegistry::allocations_memory_ = null;
 
 static bool erase_range(word offset, word size) {
@@ -71,20 +78,29 @@ static bool ensure_erased(word offset, word size) {
 void FlashRegistry::set_up() {
   ASSERT(allocations_memory() == null);
   if (!device_is_ready(flash_device)) FATAL("flash device not ready");
+#ifdef TOIT_FLASH_MMAP
   const void* memory = null;
   esp_err_t result = spi_flash_mmap(partition_offset, partition_size, SPI_FLASH_MMAP_DATA,
                                     &memory, &allocations_handle);
   if (result != ESP_OK || memory == null) FATAL("cannot map toit_partition (%d)", result);
   allocations_memory_ = reinterpret_cast<uint8*>(const_cast<void*>(memory));
+#else
+  // The partition's grandparent is the flash node (flash0), whose reg is its bus address.
+  allocations_memory_ = reinterpret_cast<uint8*>(
+      DT_REG_ADDR(DT_GPARENT(DT_NODELABEL(toit_partition))) + partition_offset);
+#endif
 }
 
 void FlashRegistry::tear_down() {
   allocations_memory_ = null;
+#ifdef TOIT_FLASH_MMAP
   spi_flash_munmap(allocations_handle);
+#endif
 }
 
 // Espressif's flash write and erase invalidate the cache over the range they
 // touch, so the mapped view is coherent without an explicit flush (as on ESP32).
+// nRF's NVMC writes through to the array that the bus reads directly.
 void FlashRegistry::flush() {}
 
 int FlashRegistry::allocations_size() {
