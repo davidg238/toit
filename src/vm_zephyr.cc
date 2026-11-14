@@ -19,12 +19,16 @@
 
 #include "vm.h"
 #include "event_sources/timer.h"
+#include "event_sources/zsock_zephyr.h"
 
 namespace toit {
 
-// VM core only: timers. Peripheral event sources come with their resources.
+// Timers, and socket readiness when the build has a network stack.
 void VM::load_platform_event_sources() {
   event_manager()->add_event_source(_new TimerEventSource());
+#ifdef CONFIG_NET_SOCKETS
+  event_manager()->add_event_source(_new ZsockEventSource());
+#endif
 }
 
 }  // namespace toit
