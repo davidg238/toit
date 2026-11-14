@@ -70,15 +70,17 @@ class Client extends NetworkResourceProxy implements Interface udp.MulticastInte
   address -> IpAddress:
     if is-closed: throw "Network closed"
     if (proxy-mask & NetworkService.PROXY-ADDRESS) != 0: return super
+    // Connecting a UDP socket sends nothing, but it picks the interface (and
+    // source address) for a destination that is not on the LAN. An IPv6-only
+    // stack (Thread) rejects the IPv4 probe, so fall back to an IPv6 one.
+    result := null
+    catch: result = probe-address_ "8.8.8.8"
+    return result or (probe-address_ "2001:4860:4860::8888")
+
+  probe-address_ destination/string -> IpAddress:
     socket := udp-module.Socket this
     try:
-      // This doesn't actually cause any network traffic, but it picks an
-      // interface for 8.8.8.8, which is not on the LAN.
-      socket.connect
-          SocketAddress
-              IpAddress.parse "8.8.8.8"
-              80
-      // Get the IP of the default interface.
+      socket.connect (SocketAddress (IpAddress.parse destination) 80)
       return socket.local-address.ip
     finally:
       socket.close
@@ -86,6 +88,8 @@ class Client extends NetworkResourceProxy implements Interface udp.MulticastInte
   resolve host/string -> List /* of IpAddress */:
     if is-closed: throw "Network closed"
     if (proxy-mask & NetworkService.PROXY-RESOLVE) != 0: return super host
+    // Literals need no lookup; IPv6 ones would otherwise only pass an AAAA query.
+    if IpAddress.is-valid host --accept-ipv4 --accept-ipv6: return [IpAddress.parse host]
     return dns-module.dns-lookup-multi host --network=this
 
   quarantine -> none:

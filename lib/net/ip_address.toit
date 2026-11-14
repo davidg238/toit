@@ -12,16 +12,44 @@ class IpAddress:
   constructor.deserialize bytes/ByteArray:
     return IpAddress bytes
 
-  constructor.parse ip:
-    raw = ByteArray 4
+  /**
+  Parses an IPv4 address in dotted decimal (192.168.0.1), or an IPv6
+    address in colon hexadecimal, optionally compressed with "::"
+    (2001:db8::1234:5678). Embedded IPv4 and zone suffixes are not accepted.
+  */
+  constructor.parse ip/string:
+    if ip.contains ":": return IpAddress (parse-ipv6_ ip)
+    bytes := ByteArray 4
     i := 0
     ip.split ".":
-      if i > 4: throw "BAD_FORMAT"
+      if i >= 4: throw "BAD_FORMAT"
       val := int.parse it
       if not 0 <= val <= 255: throw "BAD_FORMAT"
-      raw[i] = val
+      bytes[i] = val
       i++
     if i != 4: throw "BAD_FORMAT"
+    return IpAddress bytes
+
+  static parse-ipv6_ ip/string -> ByteArray:
+    halves := ip.split "::"
+    if halves.size > 2: throw "BAD_FORMAT"
+    head := parse-ipv6-groups_ halves[0]
+    tail := halves.size == 2 ? (parse-ipv6-groups_ halves[1]) : []
+    if halves.size == 1 and head.size != 8: throw "BAD_FORMAT"
+    if halves.size == 2 and head.size + tail.size > 7: throw "BAD_FORMAT"
+    bytes := ByteArray 16
+    put := : | index/int group/int |
+      bytes[2 * index] = group >> 8
+      bytes[2 * index + 1] = group & 0xff
+    head.size.repeat: put.call it head[it]
+    tail.size.repeat: put.call (8 - tail.size + it) tail[it]
+    return bytes
+
+  static parse-ipv6-groups_ text/string -> List:
+    if text.is-empty: return []
+    return (text.split ":").map: | group/string |
+      if not 1 <= group.size <= 4: throw "BAD_FORMAT"
+      int.parse group --radix=16 --on-error=: throw "BAD_FORMAT"
 
   is-ipv6 -> bool: return raw.size == 16
 
