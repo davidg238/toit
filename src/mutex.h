@@ -17,7 +17,9 @@
 
 #include "top.h"
 
-#ifdef TOIT_FREERTOS
+#if defined(TOIT_ZEPHYR)
+#include <zephyr/kernel.h>
+#elif defined(TOIT_FREERTOS)
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #else
@@ -30,7 +32,9 @@ namespace toit {
 class Mutex {
  public:
   Mutex(int level, const char* name) : level_(level), name_(name) {
-#ifdef TOIT_FREERTOS
+#if defined(TOIT_ZEPHYR)
+    k_mutex_init(&mutex_);
+#elif defined(TOIT_FREERTOS)
     sem_ = xSemaphoreCreateMutex();
     if (!sem_) FATAL("mutex allocation of semaphore failed")
 #else
@@ -39,7 +43,9 @@ class Mutex {
   }
 
   ~Mutex() {
-#ifdef TOIT_FREERTOS
+#if defined(TOIT_ZEPHYR)
+    // k_mutex needs no teardown.
+#elif defined(TOIT_FREERTOS)
     vSemaphoreDelete(sem_);
 #else
     pthread_mutex_destroy(&mutex_);
@@ -50,7 +56,10 @@ class Mutex {
   const char* name() const { return name_; }
 
   void lock() {
-#ifdef TOIT_FREERTOS
+#if defined(TOIT_ZEPHYR)
+    int error = k_mutex_lock(&mutex_, K_FOREVER);
+    if (error != 0) FATAL("mutex lock failed with error %d", error);
+#elif defined(TOIT_FREERTOS)
     if (xSemaphoreTake(sem_, portMAX_DELAY) != pdTRUE) {
       FATAL("mutex lock failed");
     }
@@ -61,7 +70,10 @@ class Mutex {
   }
 
   void unlock() {
-#ifdef TOIT_FREERTOS
+#if defined(TOIT_ZEPHYR)
+    int error = k_mutex_unlock(&mutex_);
+    if (error != 0) FATAL("mutex unlock failed with error %d", error);
+#elif defined(TOIT_FREERTOS)
     if (xSemaphoreGive(sem_) != pdTRUE) {
       FATAL("mutex unlock failed");
     }
@@ -72,7 +84,9 @@ class Mutex {
   }
 
   bool is_locked() {
-#ifdef TOIT_FREERTOS
+#if defined(TOIT_ZEPHYR)
+    return mutex_.lock_count != 0;
+#elif defined(TOIT_FREERTOS)
     return xSemaphoreGetMutexHolder(sem_) != null;
 #else
     int error = pthread_mutex_trylock(&mutex_);
@@ -88,7 +102,9 @@ class Mutex {
  private:
   const int level_;
   const char* const name_;
-#ifdef TOIT_FREERTOS
+#if defined(TOIT_ZEPHYR)
+  struct k_mutex mutex_;
+#elif defined(TOIT_FREERTOS)
   SemaphoreHandle_t sem_;
 #else
   pthread_mutex_t mutex_;

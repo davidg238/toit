@@ -17,7 +17,7 @@
 
 #include "top.h"
 
-#ifdef TOIT_FREERTOS
+#if defined(TOIT_FREERTOS) && !defined(TOIT_ZEPHYR)
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>

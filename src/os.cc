@@ -17,7 +17,7 @@
 
 #include <errno.h>
 #include <limits.h>
-#ifndef TOIT_EC618
+#if !defined(TOIT_EC618) && !defined(TOIT_ZEPHYR)
 #include <pthread.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -26,6 +26,10 @@
 #include <time.h>
 
 #include "utils.h"
+
+#ifdef TOIT_ZEPHYR
+#include <zephyr/sys/clock.h>
+#endif
 
 #ifdef TOIT_EC618
 extern "C" {
@@ -82,7 +86,7 @@ void OS::timespec_increment(timespec* ts, int64 ns) {
   ASSERT(ts->tv_nsec < ns_per_second);
 }
 
-#ifdef TOIT_EC618
+#if defined(TOIT_EC618) || defined(TOIT_ZEPHYR)
 bool OS::monotonic_gettime(int64* timestamp) {
   *timestamp = OS::get_system_time();
   return true;
@@ -124,7 +128,11 @@ void OS::feed_watchdog() {
   // application watchdog is the software watchdog in primitive_ec618.cc.
 }
 
-#ifdef TOIT_EC618
+#if defined(TOIT_ZEPHYR)
+bool OS::get_real_time(struct timespec* time) {
+  return sys_clock_gettime(SYS_CLOCK_REALTIME, time) == 0;
+}
+#elif defined(TOIT_EC618)
 bool OS::get_real_time(struct timespec* time) {
   utc_timer_value_t* utc = OsaSystemTimeReadRamUtc();
   if (utc == null || utc->UTCsecs == 0) {

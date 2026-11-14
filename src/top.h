@@ -57,7 +57,9 @@
 #endif
 
 //  TOIT_FREERTOS : FreeRTOS
-#if defined(__FREERTOS__)
+#if defined(__FREERTOS__) || defined(__ZEPHYR__)
+// On Zephyr, TOIT_FREERTOS means "embedded device", as it does for most of
+// the code that tests it; FreeRTOS APIs themselves are guarded by TOIT_ESP32.
 #define TOIT_FREERTOS
 #endif
 
@@ -67,7 +69,10 @@
 //  TOIT_DARWIN   : Apple's OSX
 //  TOIT_LINUX    : Ubuntu etc.
 
-#if defined(ESP_PLATFORM)
+#if defined(__ZEPHYR__)
+// Tested first: Zephyr's Espressif HAL also defines ESP_PLATFORM.
+#define TOIT_ZEPHYR
+#elif defined(ESP_PLATFORM)
 #define TOIT_ESP32
 #define TOIT_CMPCTMALLOC
 #elif defined(__EC618)
@@ -92,15 +97,15 @@
 #define TOIT_POSIX
 #endif
 
-#if defined(TOIT_DARWIN) + defined(TOIT_LINUX) + defined(TOIT_WINDOWS) + defined(TOIT_ESP32) + defined(TOIT_EC618) > 1
+#if defined(TOIT_DARWIN) + defined(TOIT_LINUX) + defined(TOIT_WINDOWS) + defined(TOIT_ESP32) + defined(TOIT_EC618) + defined(TOIT_ZEPHYR) > 1
 #error "More than one OS configuration specified"
-#elif defined(TOIT_DARWIN) + defined(TOIT_LINUX) + defined(TOIT_WINDOWS) + defined(TOIT_ESP32) + defined(TOIT_EC618) < 1
+#elif defined(TOIT_DARWIN) + defined(TOIT_LINUX) + defined(TOIT_WINDOWS) + defined(TOIT_ESP32) + defined(TOIT_EC618) + defined(TOIT_ZEPHYR) < 1
 #error "No OS configuration specified"
 #endif
 
 #if (__WORDSIZE == 64) || __WIN64
 #define BUILD_64 1
-#elif (__WORDSIZE == 32) || ESP32 || __EC618 || __WIN32
+#elif (__WORDSIZE == 32) || ESP32 || __EC618 || __WIN32 || (defined(__ZEPHYR__) && __SIZEOF_POINTER__ == 4)
 #define BUILD_32 1
 #else
 #error "Expecting a 32 or 64 bit memory model"

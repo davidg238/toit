@@ -58,7 +58,7 @@ extern "C" {
 #include "error_win.h"
 #endif
 
-#ifdef TOIT_FREERTOS
+#if defined(TOIT_FREERTOS) && !defined(TOIT_ZEPHYR)
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #endif
@@ -2837,6 +2837,8 @@ PRIMITIVE(hostname) {
   return process->allocate_string_or_error(buffer);
 #elif defined(TOIT_EC618)
   return process->allocate_string_or_error("ec618");
+#elif defined(TOIT_ZEPHYR)
+  return process->allocate_string_or_error(CONFIG_BOARD);
 #else
 #error "Unsupported platform"
 #endif
