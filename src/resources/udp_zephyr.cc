@@ -17,6 +17,7 @@
 
 #if defined(TOIT_ZEPHYR) && defined(CONFIG_NET_SOCKETS)
 
+#include <zephyr/net/net_if.h>
 #include <zephyr/net/socket.h>
 
 #include "../objects.h"
@@ -206,6 +207,15 @@ static Object* get_sockname(int fd, Process* process, bool want_port) {
     return Primitive::os_error(errno, process);
   }
   if (want_port) return Smi::from(ntohs(sin.sin6_port));
+  // A connected UDP socket stays bound to ::, so report the source address
+  // Zephyr would pick for the peer (net.Client.address relies on this).
+  struct sockaddr_in6 peer;
+  socklen_t peer_len = sizeof(peer);
+  if (net_ipv6_is_addr_unspecified(&sin.sin6_addr) &&
+      zsock_getpeername(fd, reinterpret_cast<struct sockaddr*>(&peer), &peer_len) == 0) {
+    const struct in6_addr* source = net_if_ipv6_select_src_addr(null, &peer.sin6_addr);
+    if (source != null) sin.sin6_addr = *source;
+  }
   char buffer[INET6_ADDRSTRLEN];
   zsock_inet_ntop(AF_INET6, &sin.sin6_addr, buffer, sizeof(buffer));
   return process->allocate_string_or_error(buffer);
