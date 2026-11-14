@@ -17,7 +17,6 @@
 
 #if defined(TOIT_ZEPHYR) && defined(CONFIG_NET_SOCKETS)
 
-#include <zephyr/net/net_if.h>
 #include <zephyr/net/socket.h>
 
 #include "../objects.h"
@@ -30,31 +29,15 @@
 
 #include "../event_sources/zsock_zephyr.h"
 
+#include "socket_address_zephyr.h"
 #include "udp.h"
 
 // UDP over Zephyr's BSD sockets, shaped like udp_linux.cc. IPv6 only (Thread
-// is IPv6-only): addresses are 16 bytes. The Toit library binds to the 4-byte
-// any-address #[0,0,0,0]; that alone is accepted and means in6addr_any.
+// is IPv6-only); addresses as in socket_address_zephyr.h.
 
 namespace toit {
 
 static const int MAX_DATAGRAM = 1280;  // The IPv6 minimum MTU bounds a Thread datagram.
-
-// Fills `addr` from a 16-byte address, or the 4-byte any-address.
-static bool to_sockaddr(const uint8* bytes, word length, int port, struct sockaddr_in6* addr) {
-  memset(addr, 0, sizeof(*addr));
-  addr->sin6_family = AF_INET6;
-  addr->sin6_port = htons(port);
-  if (length == 16) {
-    memcpy(&addr->sin6_addr, bytes, 16);
-    return true;
-  }
-  if (length == 4) {
-    for (int i = 0; i < 4; i++) if (bytes[i] != 0) return false;
-    return true;  // in6addr_any.
-  }
-  return false;
-}
 
 class UdpResourceGroup : public ResourceGroup {
  public:
@@ -105,7 +88,7 @@ PRIMITIVE(bind_socket) {
   ARGS(ByteArray, proxy, IntResource, connection_resource, Blob, address, int, port);
   USE(proxy);
   struct sockaddr_in6 addr;
-  if (!to_sockaddr(address.address(), address.length(), port, &addr)) FAIL(INVALID_ARGUMENT);
+  if (!zsock_address_from_bytes(address.address(), address.length(), port, &addr)) FAIL(INVALID_ARGUMENT);
   if (zsock_bind(connection_resource->id(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) != 0) {
     return Primitive::os_error(errno, process);
   }
@@ -115,7 +98,7 @@ PRIMITIVE(bind_socket) {
 PRIMITIVE(bind) {
   ARGS(UdpResourceGroup, resource_group, Blob, address, int, port);
   struct sockaddr_in6 addr;
-  if (!to_sockaddr(address.address(), address.length(), port, &addr)) FAIL(INVALID_ARGUMENT);
+  if (!zsock_address_from_bytes(address.address(), address.length(), port, &addr)) FAIL(INVALID_ARGUMENT);
   ByteArray* resource_proxy = process->object_heap()->allocate_proxy();
   if (resource_proxy == null) FAIL(ALLOCATION_FAILED);
   int id = resource_group->create_socket();
@@ -135,7 +118,7 @@ PRIMITIVE(connect) {
   ARGS(ByteArray, proxy, IntResource, connection, Blob, address, int, port);
   USE(proxy);
   struct sockaddr_in6 addr;
-  if (!to_sockaddr(address.address(), address.length(), port, &addr)) FAIL(INVALID_ARGUMENT);
+  if (!zsock_address_from_bytes(address.address(), address.length(), port, &addr)) FAIL(INVALID_ARGUMENT);
   if (zsock_connect(connection->id(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) != 0) {
     return Primitive::os_error(errno, process);
   }
@@ -185,7 +168,7 @@ PRIMITIVE(send) {
   if (address != process->null_object()) {
     Blob address_bytes;
     if (!address->byte_content(process->program(), &address_bytes, STRINGS_OR_BYTE_ARRAYS)) FAIL(WRONG_OBJECT_TYPE);
-    if (!to_sockaddr(address_bytes.address(), address_bytes.length(), port, &addr)) FAIL(INVALID_ARGUMENT);
+    if (!zsock_address_from_bytes(address_bytes.address(), address_bytes.length(), port, &addr)) FAIL(INVALID_ARGUMENT);
     to_addr = reinterpret_cast<struct sockaddr*>(&addr);
     size = sizeof(addr);
   }
@@ -200,34 +183,13 @@ PRIMITIVE(send) {
   return Smi::from(wrote);
 }
 
-static Object* get_sockname(int fd, Process* process, bool want_port) {
-  struct sockaddr_in6 sin;
-  socklen_t len = sizeof(sin);
-  if (zsock_getsockname(fd, reinterpret_cast<struct sockaddr*>(&sin), &len) != 0) {
-    return Primitive::os_error(errno, process);
-  }
-  if (want_port) return Smi::from(ntohs(sin.sin6_port));
-  // A connected UDP socket stays bound to ::, so report the source address
-  // Zephyr would pick for the peer (net.Client.address relies on this).
-  struct sockaddr_in6 peer;
-  socklen_t peer_len = sizeof(peer);
-  if (net_ipv6_is_addr_unspecified(&sin.sin6_addr) &&
-      zsock_getpeername(fd, reinterpret_cast<struct sockaddr*>(&peer), &peer_len) == 0) {
-    const struct in6_addr* source = net_if_ipv6_select_src_addr(null, &peer.sin6_addr);
-    if (source != null) sin.sin6_addr = *source;
-  }
-  char buffer[INET6_ADDRSTRLEN];
-  zsock_inet_ntop(AF_INET6, &sin.sin6_addr, buffer, sizeof(buffer));
-  return process->allocate_string_or_error(buffer);
-}
-
 PRIMITIVE(get_option) {
   ARGS(ByteArray, proxy, IntResource, connection_resource, int, option);
   USE(proxy);
   int fd = connection_resource->id();
   switch (option) {
-    case UDP_ADDRESS: return get_sockname(fd, process, false);
-    case UDP_PORT: return get_sockname(fd, process, true);
+    case UDP_ADDRESS: return zsock_name(fd, process, false, false);
+    case UDP_PORT: return zsock_name(fd, process, false, true);
     case UDP_BROADCAST: return BOOL(false);
     default: FAIL(UNIMPLEMENTED);
   }

@@ -152,7 +152,10 @@ class TcpSocket extends TcpSocket_ with io.CloseableInMixin io.CloseableOutMixin
     return connect hostname port: throw it
 
   connect hostname port [failure]:
-    address := dns-lookup hostname --network=network_
+    // Literals need no lookup; IPv6 ones would otherwise only pass an AAAA query.
+    address := (net.IpAddress.is-valid hostname --accept-ipv4 --accept-ipv6)
+        ? net.IpAddress.parse hostname
+        : dns-lookup hostname --network=network_
     open_ (tcp-connect_ tcp-resource-group_ address.raw port window-size_)
     error := catch:
       ensure-state_ TOIT-TCP-WRITE_ --error-bits=(TOIT-TCP-ERROR_ | TOIT-TCP-CLOSE_) --failure=failure
