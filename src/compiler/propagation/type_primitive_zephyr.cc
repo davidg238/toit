@@ -30,6 +30,9 @@ TYPE_PRIMITIVE_SMI(key_find)
 TYPE_PRIMITIVE_ANY(key_init)
 TYPE_PRIMITIVE_ANY(key_open)
 TYPE_PRIMITIVE_SMI(key_state)
+TYPE_PRIMITIVE_NULL(thread_up)
+TYPE_PRIMITIVE_SMI(thread_role)
+TYPE_PRIMITIVE_BOOL(thread_down)
 
 }  // namespace toit::compiler
 }  // namespace toit

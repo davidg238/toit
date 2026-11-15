@@ -43,6 +43,13 @@
 
 #include "../event_sources/zephyr_keys.h"
 
+#if defined(CONFIG_NET_L2_OPENTHREAD)
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/openthread.h>
+#include <openthread/link.h>
+#include <openthread/thread.h>
+#endif
+
 namespace toit {
 
 // A devicetree node's labels, as `static const char* const name[]`, null-terminated.
@@ -262,6 +269,84 @@ PRIMITIVE(key_state) {
   bool pressed;
   ZephyrKeyEventSource::read(key, &presses, &pressed);
   return Smi::from(static_cast<word>(presses & 0x3fffffff) * 2 + (pressed ? 1 : 0));
+}
+
+// Thread, driven by the system program's network provider (system/extensions/
+// zephyr/network.toit): up on the first net.open, down after the last close.
+// Attaching takes seconds, so thread_up only starts it and Toit polls
+// thread_role. "Down" is a sleepy end device unless
+// CONFIG_TOIT_THREAD_DOWN_DETACH disables Thread (ztoit design §7).
+#if defined(CONFIG_NET_L2_OPENTHREAD)
+static bool thread_started = false;
+
+static void thread_set_rx_on(otInstance* instance, bool rx_on) {
+  otLinkModeConfig mode = otThreadGetLinkMode(instance);
+  mode.mRxOnWhenIdle = rx_on;
+  otThreadSetLinkMode(instance, mode);
+}
+#endif
+
+PRIMITIVE(thread_up) {
+#if defined(CONFIG_NET_L2_OPENTHREAD)
+  if (!thread_started) {
+    // openthread_run() does not admin-up the net_if; sockets then fail with ENETDOWN.
+    openthread_init();
+    if (openthread_run() != 0) FAIL(HARDWARE_ERROR);
+    struct openthread_context* context = openthread_get_default_context();
+    struct net_if* iface = context ? context->iface : net_if_get_default();
+    if (iface == null || net_if_up(iface) < 0) FAIL(HARDWARE_ERROR);
+    thread_started = true;
+  }
+  otInstance* instance = openthread_get_default_instance();
+  openthread_mutex_lock();
+  thread_set_rx_on(instance, true);
+  otError error = OT_ERROR_NONE;
+  if (otThreadGetDeviceRole(instance) == OT_DEVICE_ROLE_DISABLED) {
+    error = otThreadSetEnabled(instance, true);
+  }
+  openthread_mutex_unlock();
+  if (error != OT_ERROR_NONE) FAIL(HARDWARE_ERROR);
+  return process->null_object();
+#else
+  FAIL(UNSUPPORTED);
+#endif
+}
+
+PRIMITIVE(thread_role) {
+#if defined(CONFIG_NET_L2_OPENTHREAD)
+  if (!thread_started) return Smi::from(OT_DEVICE_ROLE_DISABLED);
+  otInstance* instance = openthread_get_default_instance();
+  openthread_mutex_lock();
+  otDeviceRole role = otThreadGetDeviceRole(instance);
+  openthread_mutex_unlock();
+  return Smi::from(role);
+#else
+  FAIL(UNSUPPORTED);
+#endif
+}
+
+// Returns true if Thread was disabled, false if it stays attached as a sleepy
+// end device polling at half the child timeout (the parent drops a child that
+// is silent for the whole timeout).
+PRIMITIVE(thread_down) {
+#if defined(CONFIG_NET_L2_OPENTHREAD)
+  if (!thread_started) FAIL(INVALID_ARGUMENT);
+  otInstance* instance = openthread_get_default_instance();
+  openthread_mutex_lock();
+#if defined(CONFIG_TOIT_THREAD_DOWN_DETACH)
+  otError error = otThreadSetEnabled(instance, false);
+  bool detached = true;
+#else
+  thread_set_rx_on(instance, false);
+  otError error = otLinkSetPollPeriod(instance, otThreadGetChildTimeout(instance) * 1000 / 2);
+  bool detached = false;
+#endif
+  openthread_mutex_unlock();
+  if (error != OT_ERROR_NONE) FAIL(HARDWARE_ERROR);
+  return BOOL(detached);
+#else
+  FAIL(UNSUPPORTED);
+#endif
 }
 
 }  // namespace toit

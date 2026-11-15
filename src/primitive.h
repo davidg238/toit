@@ -303,6 +303,9 @@ namespace toit {
   PRIMITIVE(key_init, 0)                     \
   PRIMITIVE(key_open, 2)                     \
   PRIMITIVE(key_state, 1)                    \
+  PRIMITIVE(thread_up, 0)                    \
+  PRIMITIVE(thread_role, 0)                  \
+  PRIMITIVE(thread_down, 0)                  \
 
 #define MODULE_UNIX_SOCKET(PRIMITIVE)        \
   PRIMITIVE(init, 0)                         \
