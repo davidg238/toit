@@ -81,6 +81,7 @@ namespace toit {
   M(espnow,  MODULE_ESPNOW)                  \
   M(bignum,  MODULE_BIGNUM)                  \
   M(unix_socket, MODULE_UNIX_SOCKET)         \
+  M(zephyr,  MODULE_ZEPHYR)  /* Last: stock module numbers stay unchanged. */ \
 
 #define MODULE_CORE(PRIMITIVE)               \
   PRIMITIVE(write_on_stdout, 2)              \
@@ -288,6 +289,20 @@ namespace toit {
   PRIMITIVE(get_option, 3)                   \
   PRIMITIVE(set_option, 4)                   \
   PRIMITIVE(gc, 1)                           \
+
+// Zephyr devices by devicetree node label (src/resources/zephyr.cc): generic
+// over Zephyr's device classes, so no per-driver primitives.
+#define MODULE_ZEPHYR(PRIMITIVE)             \
+  PRIMITIVE(device_find, 1)                  \
+  PRIMITIVE(sensor_fetch, 1)                 \
+  PRIMITIVE(sensor_read, 2)                  \
+  PRIMITIVE(strip_update, 2)                 \
+  PRIMITIVE(led_find, 1)                     \
+  PRIMITIVE(led_set, 2)                      \
+  PRIMITIVE(key_find, 1)                     \
+  PRIMITIVE(key_init, 0)                     \
+  PRIMITIVE(key_open, 2)                     \
+  PRIMITIVE(key_state, 1)                    \
 
 #define MODULE_UNIX_SOCKET(PRIMITIVE)        \
   PRIMITIVE(init, 0)                         \
@@ -1218,6 +1233,7 @@ Object* get_absolute_path(Process* process, const wchar_t* pathname, wchar_t* ou
 #define _A_T_MbedTlsResourceGroup(N, name)MAKE_UNPACKING_MACRO(MbedTlsResourceGroup, N, name)
 #define _A_T_TimerResourceGroup(N, name)  MAKE_UNPACKING_MACRO(TimerResourceGroup, N, name)
 #define _A_T_UdpResourceGroup(N, name)    MAKE_UNPACKING_MACRO(UdpResourceGroup, N, name)
+#define _A_T_KeyResourceGroup(N, name)    MAKE_UNPACKING_MACRO(KeyResourceGroup, N, name)
 #define _A_T_UartResourceGroup(N, name)   MAKE_UNPACKING_MACRO(UartResourceGroup, N, name)
 #define _A_T_StdinResourceGroup(N, name)  MAKE_UNPACKING_MACRO(StdinResourceGroup, N, name)
 #define _A_T_TerminalResizeResourceGroup(N, name) MAKE_UNPACKING_MACRO(TerminalResizeResourceGroup, N, name)

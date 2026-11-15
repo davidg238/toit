@@ -111,6 +111,7 @@ namespace toit {
   fn(RpcResourceGroup)                  \
   fn(MbedTlsResourceGroup)              \
   fn(UdpResourceGroup)                  \
+  fn(KeyResourceGroup)                  \
   fn(UartResourceGroup)                 \
   fn(StdinResourceGroup)                \
   fn(TerminalResizeResourceGroup)       \
