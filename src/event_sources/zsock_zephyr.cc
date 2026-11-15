@@ -77,6 +77,10 @@ void ZsockEventSource::on_unregister_resource(Locker& locker, Resource* resource
 }
 
 void ZsockEventSource::entry() {
+  // Zephyr's poll fails with ENOMEM above CONFIG_ZVFS_POLL_MAX fds, and its fd
+  // table holds CONFIG_ZVFS_OPEN_MAX: size both for every socket plus the wake fd.
+  static_assert(CONFIG_ZVFS_POLL_MAX >= MAX_FDS + 1, "CONFIG_ZVFS_POLL_MAX < sockets + wake fd");
+  static_assert(CONFIG_ZVFS_OPEN_MAX >= MAX_FDS + 1, "CONFIG_ZVFS_OPEN_MAX < sockets + wake fd");
   struct zsock_pollfd fds[MAX_FDS + 1];
   while (true) {
     int count = 0;

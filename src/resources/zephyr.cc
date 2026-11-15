@@ -294,7 +294,9 @@ PRIMITIVE(thread_up) {
     if (openthread_run() != 0) FAIL(HARDWARE_ERROR);
     struct openthread_context* context = openthread_get_default_context();
     struct net_if* iface = context ? context->iface : net_if_get_default();
-    if (iface == null || net_if_up(iface) < 0) FAIL(HARDWARE_ERROR);
+    // openthread_run() may already have brought it up: -EALREADY is success.
+    int up = iface ? net_if_up(iface) : -ENODEV;
+    if (up < 0 && up != -EALREADY) FAIL(HARDWARE_ERROR);
     thread_started = true;
   }
   otInstance* instance = openthread_get_default_instance();
@@ -330,20 +332,25 @@ PRIMITIVE(thread_role) {
 // is silent for the whole timeout).
 PRIMITIVE(thread_down) {
 #if defined(CONFIG_NET_L2_OPENTHREAD)
-  if (!thread_started) FAIL(INVALID_ARGUMENT);
+#if defined(CONFIG_TOIT_THREAD_DOWN_DETACH)
+  const bool detach = true;
+#else
+  const bool detach = false;
+#endif
+  // Never started (thread_up failed): already down. Throwing here would hide
+  // thread_up's error, since NetworkState.up disconnects after a failed connect.
+  if (!thread_started) return BOOL(detach);
   otInstance* instance = openthread_get_default_instance();
   openthread_mutex_lock();
 #if defined(CONFIG_TOIT_THREAD_DOWN_DETACH)
   otError error = otThreadSetEnabled(instance, false);
-  bool detached = true;
 #else
   thread_set_rx_on(instance, false);
   otError error = otLinkSetPollPeriod(instance, otThreadGetChildTimeout(instance) * 1000 / 2);
-  bool detached = false;
 #endif
   openthread_mutex_unlock();
   if (error != OT_ERROR_NONE) FAIL(HARDWARE_ERROR);
-  return BOOL(detached);
+  return BOOL(detach);
 #else
   FAIL(UNSUPPORTED);
 #endif
