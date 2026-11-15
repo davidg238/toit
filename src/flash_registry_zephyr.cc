@@ -28,9 +28,7 @@
 // Espressif flash sits behind an MMU and must be mapped (spi_flash_mmap); on
 // SoCs with memory-mapped internal flash (nRF) the partition is read at the
 // flash node's base address plus its offset.
-#if !DT_NODE_EXISTS(DT_NODELABEL(toit_partition))
-#error "the board devicetree needs a toit_partition (see ztoit's board overlay)"
-#endif
+#if DT_NODE_EXISTS(DT_NODELABEL(toit_partition)) && defined(CONFIG_FLASH)
 
 #ifdef CONFIG_SOC_FAMILY_ESPRESSIF_ESP32
 #include <spi_flash_mmap.h>
@@ -124,5 +122,53 @@ bool FlashRegistry::erase_flash_registry() {
 }
 
 }  // namespace toit
+
+#else  // No toit_partition or no flash driver (RP2350: none for its QMI in Zephyr 4.2).
+
+// The registry is a static RAM array: programs are installed into RAM at boot
+// and run from there (no XIP, nothing survives a reset). 128 KB holds the
+// largest program so far (soak.toit, 64 KB).
+namespace toit {
+
+static const int RAM_REGISTRY_SIZE = 128 * KB;
+alignas(FLASH_PAGE_SIZE) static uint8 ram_registry[RAM_REGISTRY_SIZE];
+uint8* FlashRegistry::allocations_memory_ = null;
+
+void FlashRegistry::set_up() {
+  ASSERT(allocations_memory() == null);
+  allocations_memory_ = ram_registry;
+  memset(ram_registry, 0xff, RAM_REGISTRY_SIZE);
+}
+
+void FlashRegistry::tear_down() {
+  allocations_memory_ = null;
+}
+
+void FlashRegistry::flush() {}
+
+int FlashRegistry::allocations_size() {
+  return RAM_REGISTRY_SIZE;
+}
+
+int FlashRegistry::erase_chunk(word offset, word size) {
+  ASSERT(Utils::is_aligned(offset, FLASH_PAGE_SIZE));
+  size = Utils::round_up(size, FLASH_PAGE_SIZE);
+  memset(ram_registry + offset, 0xff, size);
+  return size;
+}
+
+bool FlashRegistry::write_chunk(const void* chunk, word offset, word size) {
+  memcpy(ram_registry + offset, chunk, size);
+  return true;
+}
+
+bool FlashRegistry::erase_flash_registry() {
+  memset(ram_registry, 0xff, RAM_REGISTRY_SIZE);
+  return true;
+}
+
+}  // namespace toit
+
+#endif  // toit_partition
 
 #endif  // TOIT_ZEPHYR
