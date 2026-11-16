@@ -132,7 +132,9 @@ PRIMITIVE(receive) {
   uint8 buffer[MAX_DATAGRAM];
   struct sockaddr_in6 addr;
   socklen_t addr_len = sizeof(addr);
-  int read = zsock_recvfrom(fd, buffer, sizeof(buffer), ZSOCK_MSG_DONTWAIT,
+  // Peek, allocate, then consume: an allocation failure makes the interpreter GC
+  // and re-run this primitive, so the datagram must still be queued (ztoit#18).
+  int read = zsock_recvfrom(fd, buffer, sizeof(buffer), ZSOCK_MSG_DONTWAIT | ZSOCK_MSG_PEEK,
                             reinterpret_cast<struct sockaddr*>(&addr), &addr_len);
   if (read == -1) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -141,15 +143,22 @@ PRIMITIVE(receive) {
     }
     return Primitive::os_error(errno, process);
   }
+  Array* out = null;
+  if (is_array(output)) {
+    out = Array::cast(output);
+    if (out->length() < 3) FAIL(INVALID_ARGUMENT);
+  }
   ByteArray* array = process->allocate_byte_array(read);
   if (array == null) FAIL(ALLOCATION_FAILED);
+  ByteArray* address = null;
+  if (out != null) {
+    address = process->allocate_byte_array(16);
+    if (address == null) FAIL(ALLOCATION_FAILED);
+  }
+  zsock_recvfrom(fd, buffer, sizeof(buffer), ZSOCK_MSG_DONTWAIT, null, null);  // Consume the peeked datagram.
   memcpy(ByteArray::Bytes(array).address(), buffer, read);
-  if (!is_array(output)) return array;
+  if (out == null) return array;
 
-  Array* out = Array::cast(output);
-  if (out->length() < 3) FAIL(INVALID_ARGUMENT);
-  ByteArray* address = process->allocate_byte_array(16);
-  if (address == null) FAIL(ALLOCATION_FAILED);
   memcpy(ByteArray::Bytes(address).address(), &addr.sin6_addr, 16);
   out->at_put(0, array);
   out->at_put(1, address);
