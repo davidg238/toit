@@ -43,6 +43,8 @@ class ZephyrNetworkProvider extends NetworkServiceProviderBase:
         critical-do: state_.down
 
 class ThreadModule implements NetworkModule:
+  attached_ := false
+
   connect -> none:
     start := Time.monotonic-us
     thread-up_
@@ -52,10 +54,12 @@ class ThreadModule implements NetworkModule:
         print "thread: attach timed out"
         throw "thread: attach timed out"
       sleep --ms=100
+    attached_ = true
     print "thread: up role=$thread-role_ in $((Time.monotonic-us - start) / 1_000) ms"
 
   disconnect -> none:
-    detached := thread-down_
+    // A failed attach disables Thread rather than leave it retrying.
+    detached := thread-down_ (not attached_)
     print "thread: down $(detached ? "detached" : "sed")"
 
 thread-up_ -> none:
@@ -64,5 +68,5 @@ thread-up_ -> none:
 thread-role_ -> int:
   #primitive.zephyr.thread-role
 
-thread-down_ -> bool:
+thread-down_ disable/bool -> bool:
   #primitive.zephyr.thread-down

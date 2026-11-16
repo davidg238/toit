@@ -274,36 +274,54 @@ PRIMITIVE(key_state) {
 // Thread, driven by the system program's network provider (system/extensions/
 // zephyr/network.toit): up on the first net.open, down after the last close.
 // Attaching takes seconds, so thread_up only starts it and Toit polls
-// thread_role. "Down" is a sleepy end device unless
-// CONFIG_TOIT_THREAD_DOWN_DETACH disables Thread (ztoit design §7).
+// thread_role.
+//
+// The node is always a sleepy end device (rx-off), so up and down change only
+// the poll period, which OpenThread keeps in RAM. Flipping rx-on/off instead
+// stores network info to flash on every change, and the first switch to
+// sleepy forces a re-attach (OpenThread mle.cpp SetDeviceMode). "Down" polls at
+// half the child timeout (the parent drops a child silent for the whole
+// timeout), or disables Thread with CONFIG_TOIT_THREAD_DOWN_DETACH (ztoit
+// design §7; that symbol is defined by ztoit's modules/toit/Kconfig).
 #if defined(CONFIG_NET_L2_OPENTHREAD)
+static const uint32_t THREAD_UP_POLL_MS = 100;  // Not tuned: measured by ztoit's soak.
 static bool thread_started = false;
 
-static void thread_set_rx_on(otInstance* instance, bool rx_on) {
+// Under openthread_mutex. Stores to flash only if the mode differs: once per node.
+static otError thread_set_sleepy(otInstance* instance) {
   otLinkModeConfig mode = otThreadGetLinkMode(instance);
-  mode.mRxOnWhenIdle = rx_on;
-  otThreadSetLinkMode(instance, mode);
+  if (!mode.mRxOnWhenIdle) return OT_ERROR_NONE;
+  mode.mRxOnWhenIdle = false;
+  return otThreadSetLinkMode(instance, mode);
 }
 #endif
 
 PRIMITIVE(thread_up) {
 #if defined(CONFIG_NET_L2_OPENTHREAD)
   if (!thread_started) {
-    // openthread_run() does not admin-up the net_if; sockets then fail with ENETDOWN.
-    openthread_init();
+    // openthread_init restores the stored network info (instance.cpp
+    // AfterInit), so the mode is set after it and before openthread_run attaches.
+    if (openthread_init() != 0) FAIL(HARDWARE_ERROR);
+    otInstance* instance = openthread_get_default_instance();
+    openthread_mutex_lock();
+    otError error = thread_set_sleepy(instance);
+    if (error == OT_ERROR_NONE) error = otLinkSetPollPeriod(instance, THREAD_UP_POLL_MS);
+    openthread_mutex_unlock();
+    if (error != OT_ERROR_NONE) FAIL(HARDWARE_ERROR);
     if (openthread_run() != 0) FAIL(HARDWARE_ERROR);
+    // openthread_run() does not always admin-up the net_if (sockets then fail
+    // with ENETDOWN); when it has, net_if_up returns -EALREADY.
     struct openthread_context* context = openthread_get_default_context();
     struct net_if* iface = context ? context->iface : net_if_get_default();
-    // openthread_run() may already have brought it up: -EALREADY is success.
     int up = iface ? net_if_up(iface) : -ENODEV;
     if (up < 0 && up != -EALREADY) FAIL(HARDWARE_ERROR);
     thread_started = true;
+    return process->null_object();
   }
   otInstance* instance = openthread_get_default_instance();
   openthread_mutex_lock();
-  thread_set_rx_on(instance, true);
-  otError error = OT_ERROR_NONE;
-  if (otThreadGetDeviceRole(instance) == OT_DEVICE_ROLE_DISABLED) {
+  otError error = otLinkSetPollPeriod(instance, THREAD_UP_POLL_MS);
+  if (error == OT_ERROR_NONE && otThreadGetDeviceRole(instance) == OT_DEVICE_ROLE_DISABLED) {
     error = otThreadSetEnabled(instance, true);
   }
   openthread_mutex_unlock();
@@ -327,30 +345,25 @@ PRIMITIVE(thread_role) {
 #endif
 }
 
-// Returns true if Thread was disabled, false if it stays attached as a sleepy
-// end device polling at half the child timeout (the parent drops a child that
-// is silent for the whole timeout).
+// Returns true if Thread is now disabled: always with `disable` (an attach that
+// failed must not keep the radio retrying), else per CONFIG_TOIT_THREAD_DOWN_DETACH.
 PRIMITIVE(thread_down) {
+  ARGS(bool, disable);
 #if defined(CONFIG_NET_L2_OPENTHREAD)
 #if defined(CONFIG_TOIT_THREAD_DOWN_DETACH)
-  const bool detach = true;
-#else
-  const bool detach = false;
+  disable = true;
 #endif
   // Never started (thread_up failed): already down. Throwing here would hide
   // thread_up's error, since NetworkState.up disconnects after a failed connect.
-  if (!thread_started) return BOOL(detach);
+  if (!thread_started) return BOOL(disable);
   otInstance* instance = openthread_get_default_instance();
   openthread_mutex_lock();
-#if defined(CONFIG_TOIT_THREAD_DOWN_DETACH)
-  otError error = otThreadSetEnabled(instance, false);
-#else
-  thread_set_rx_on(instance, false);
-  otError error = otLinkSetPollPeriod(instance, otThreadGetChildTimeout(instance) * 1000 / 2);
-#endif
+  otError error = disable
+      ? otThreadSetEnabled(instance, false)
+      : otLinkSetPollPeriod(instance, otThreadGetChildTimeout(instance) * 1000 / 2);
   openthread_mutex_unlock();
   if (error != OT_ERROR_NONE) FAIL(HARDWARE_ERROR);
-  return BOOL(detach);
+  return BOOL(disable);
 #else
   FAIL(UNSUPPORTED);
 #endif
