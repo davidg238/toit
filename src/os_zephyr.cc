@@ -92,8 +92,8 @@ int OS::num_cores() {
 void OS::close(int fd) {}
 
 // --- Threads ----------------------------------------------------------------
-// The current Thread* lives in the k_thread's custom data
-// (CONFIG_THREAD_CUSTOM_DATA). Stacks come from the libc heap, aligned as
+// The current Thread* is found from k_current_get() (see Thread::current()).
+// Stacks come from the libc heap, aligned as
 // K_KERNEL_STACK_DEFINE would; valid because CONFIG_USERSPACE is off.
 
 static const int DEFAULT_STACK_SIZE = 4 * KB;
