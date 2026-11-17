@@ -46,6 +46,7 @@
 #if defined(CONFIG_WIFI)
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/wifi_mgmt.h>
+#include <zephyr/net/wifi_credentials.h>
 #include <zephyr/net/dhcpv4.h>
 #endif
 
@@ -395,8 +396,9 @@ PRIMITIVE(link_kind) {
 }
 
 // WiFi station (rete's radio_wifi_connect is the model): up starts the
-// association with the build's credentials (CONFIG_TOIT_WIFI_SSID/_PSK, from a
-// git-ignored local conf), starts DHCPv4 and returns. Toit polls
+// association with the credentials in the settings store (wifi_cred/, written
+// by the flashing tool; the image carries none, ztoit#30), starts DHCPv4 and
+// returns. Toit polls
 // wifi_ready, which is true once the interface holds an IPv4 address. Down
 // disconnects. A WiFi build is IPv4-only: sockets are AF_INET
 // (socket_address_zephyr.h).
@@ -433,19 +435,15 @@ PRIMITIVE(wifi_up) {
     wifi_callback_added = true;
   }
   if (wifi_is_ready(iface)) return process->null_object();
-  struct wifi_connect_req_params params;
-  memset(&params, 0, sizeof(params));
-  params.ssid = reinterpret_cast<const uint8_t*>(CONFIG_TOIT_WIFI_SSID);
-  params.ssid_length = strlen(CONFIG_TOIT_WIFI_SSID);
-  params.psk = reinterpret_cast<const uint8_t*>(CONFIG_TOIT_WIFI_PSK);
-  params.psk_length = strlen(CONFIG_TOIT_WIFI_PSK);
-  params.security = WIFI_SECURITY_TYPE_PSK;
-  params.channel = WIFI_CHANNEL_ANY;
-  params.band = WIFI_FREQ_BAND_2_4_GHZ;
-  params.mfp = WIFI_MFP_OPTIONAL;
-  int result = net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &params, sizeof(params));
-  // -EALREADY: an association is already in progress.
-  if (result != 0 && result != -EALREADY) FAIL(HARDWARE_ERROR);
+  // An empty store would otherwise read only as Toit's connect timeout.
+  if (wifi_credentials_is_empty()) {
+    printk("wifi: no stored credentials\n");
+    FAIL(FILE_NOT_FOUND);
+  }
+  // Connects to each stored network; the store holds one
+  // (WIFI_CREDENTIALS_MAX_ENTRIES). A connect already in progress is logged
+  // by Zephyr and not returned.
+  if (net_mgmt(NET_REQUEST_WIFI_CONNECT_STORED, iface, null, 0) != 0) FAIL(HARDWARE_ERROR);
   net_dhcpv4_start(iface);  // As rete's wifi_bringup: the lease is not automatic.
   return process->null_object();
 #else
