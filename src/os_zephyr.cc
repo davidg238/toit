@@ -24,7 +24,6 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/sys/clock.h>
-#include <zephyr/sys/sys_heap.h>
 
 #include "os.h"
 #include "process.h"
@@ -241,7 +240,10 @@ void OS::signal_all(ConditionVariable* condition) { condition->signal_all(); }
 void OS::dispose(ConditionVariable* condition) { delete condition; }
 
 // --- Toit heap pages --------------------------------------------------------
-// Pages come from one static arena, so the GC metadata covers exactly it.
+// Pages come from one static, page-aligned arena, so the GC metadata covers
+// exactly it. A page map, not sys_heap: sys_heap keeps its struct at the arena
+// start and an 8-byte header before each block, so page-aligned blocks could
+// never be adjacent and a 48 KB arena yielded 5 pages of 12 (rete #521).
 
 // CONFIG_TOIT_HEAP_NOINIT puts the arena in .noinit, which the ESP32 links into
 // its second DRAM bank (CONFIG_ESP32_REGION_1_NOINIT), leaving the first to the C
@@ -251,20 +253,35 @@ static uint8 toit_arena[CONFIG_TOIT_HEAP_SIZE] __noinit __aligned(TOIT_PAGE_SIZE
 #else
 static uint8 toit_arena[CONFIG_TOIT_HEAP_SIZE] __aligned(TOIT_PAGE_SIZE);
 #endif
-static struct sys_heap toit_heap;
+static const int TOIT_ARENA_PAGES = CONFIG_TOIT_HEAP_SIZE / TOIT_PAGE_SIZE;
+static_assert(CONFIG_TOIT_HEAP_SIZE % TOIT_PAGE_SIZE == 0, "arena must be whole pages");
+static bool toit_page_used[TOIT_ARENA_PAGES];
 static struct k_spinlock toit_heap_lock;
 
+// First fit over runs of free pages.
 void* OS::allocate_pages(uword size) {
-  size = Utils::round_up(size, TOIT_PAGE_SIZE);
+  int count = Utils::round_up(size, TOIT_PAGE_SIZE) / TOIT_PAGE_SIZE;
+  void* result = null;
   k_spinlock_key_t key = k_spin_lock(&toit_heap_lock);
-  void* result = sys_heap_aligned_alloc(&toit_heap, TOIT_PAGE_SIZE, size);
+  int run = 0;
+  for (int i = 0; i < TOIT_ARENA_PAGES; i++) {
+    run = toit_page_used[i] ? 0 : run + 1;
+    if (run == count) {
+      int first = i - count + 1;
+      for (int j = first; j <= i; j++) toit_page_used[j] = true;
+      result = toit_arena + first * TOIT_PAGE_SIZE;
+      break;
+    }
+  }
   k_spin_unlock(&toit_heap_lock, key);
   return result;
 }
 
 void OS::free_pages(void* address, uword size) {
+  int first = (static_cast<uint8*>(address) - toit_arena) / TOIT_PAGE_SIZE;
+  int count = Utils::round_up(size, TOIT_PAGE_SIZE) / TOIT_PAGE_SIZE;
   k_spinlock_key_t key = k_spin_lock(&toit_heap_lock);
-  sys_heap_free(&toit_heap, address);
+  for (int j = first; j < first + count; j++) toit_page_used[j] = false;
   k_spin_unlock(&toit_heap_lock, key);
 }
 
@@ -283,7 +300,6 @@ void OS::unuse_virtual_memory(void* address, uword size) {}
 // --- Lifecycle and reporting ------------------------------------------------
 
 void OS::set_up() {
-  sys_heap_init(&toit_heap, toit_arena, sizeof(toit_arena));
   Thread::ensure_system_thread();
   set_up_mutexes();
 }
