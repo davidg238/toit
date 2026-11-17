@@ -37,7 +37,7 @@
 
 namespace toit {
 
-static const int MAX_DATAGRAM = 1280;  // The IPv6 minimum MTU bounds a Thread datagram.
+static const int MAX_DATAGRAM = 1280;  // The IPv6 minimum MTU bounds a Thread datagram; WiFi keeps the same bound.
 
 class UdpResourceGroup : public ResourceGroup {
  public:
@@ -45,7 +45,7 @@ class UdpResourceGroup : public ResourceGroup {
   UdpResourceGroup(Process* process, EventSource* event_source) : ResourceGroup(process, event_source) {}
 
   int create_socket() {
-    return zsock_socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+    return zsock_socket(ZSOCK_FAMILY, SOCK_DGRAM, IPPROTO_UDP);
   }
 
   void close_socket(int id) {
@@ -87,7 +87,7 @@ PRIMITIVE(create_socket) {
 PRIMITIVE(bind_socket) {
   ARGS(ByteArray, proxy, IntResource, connection_resource, Blob, address, int, port);
   USE(proxy);
-  struct sockaddr_in6 addr;
+  zsock_addr_t addr;
   if (!zsock_address_from_bytes(address.address(), address.length(), port, &addr)) FAIL(INVALID_ARGUMENT);
   if (zsock_bind(connection_resource->id(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) != 0) {
     return Primitive::os_error(errno, process);
@@ -97,7 +97,7 @@ PRIMITIVE(bind_socket) {
 
 PRIMITIVE(bind) {
   ARGS(UdpResourceGroup, resource_group, Blob, address, int, port);
-  struct sockaddr_in6 addr;
+  zsock_addr_t addr;
   if (!zsock_address_from_bytes(address.address(), address.length(), port, &addr)) FAIL(INVALID_ARGUMENT);
   ByteArray* resource_proxy = process->object_heap()->allocate_proxy();
   if (resource_proxy == null) FAIL(ALLOCATION_FAILED);
@@ -117,7 +117,7 @@ PRIMITIVE(bind) {
 PRIMITIVE(connect) {
   ARGS(ByteArray, proxy, IntResource, connection, Blob, address, int, port);
   USE(proxy);
-  struct sockaddr_in6 addr;
+  zsock_addr_t addr;
   if (!zsock_address_from_bytes(address.address(), address.length(), port, &addr)) FAIL(INVALID_ARGUMENT);
   if (zsock_connect(connection->id(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) != 0) {
     return Primitive::os_error(errno, process);
@@ -130,7 +130,7 @@ PRIMITIVE(receive) {
   USE(proxy);
   int fd = connection_resource->id();
   uint8 buffer[MAX_DATAGRAM];
-  struct sockaddr_in6 addr;
+  zsock_addr_t addr;
   socklen_t addr_len = sizeof(addr);
   // Peek, allocate, then consume: an allocation failure makes the interpreter GC
   // and re-run this primitive, so the datagram must still be queued (ztoit#18).
@@ -152,17 +152,17 @@ PRIMITIVE(receive) {
   if (array == null) FAIL(ALLOCATION_FAILED);
   ByteArray* address = null;
   if (out != null) {
-    address = process->allocate_byte_array(16);
+    address = process->allocate_byte_array(ZSOCK_ADDR_BYTES);
     if (address == null) FAIL(ALLOCATION_FAILED);
   }
   zsock_recvfrom(fd, buffer, sizeof(buffer), ZSOCK_MSG_DONTWAIT, null, null);  // Consume the peeked datagram.
   memcpy(ByteArray::Bytes(array).address(), buffer, read);
   if (out == null) return array;
 
-  memcpy(ByteArray::Bytes(address).address(), &addr.sin6_addr, 16);
+  memcpy(ByteArray::Bytes(address).address(), zsock_ip(&addr), ZSOCK_ADDR_BYTES);
   out->at_put(0, array);
   out->at_put(1, address);
-  out->at_put(2, Smi::from(ntohs(addr.sin6_port)));
+  out->at_put(2, Smi::from(zsock_port(&addr)));
   return out;
 }
 
@@ -171,7 +171,7 @@ PRIMITIVE(send) {
   USE(proxy);
   int fd = connection_resource->id();
   if (from < 0 || from > to || to > data.length()) FAIL(OUT_OF_BOUNDS);
-  struct sockaddr_in6 addr;
+  zsock_addr_t addr;
   struct sockaddr* to_addr = null;
   socklen_t size = 0;
   if (address != process->null_object()) {

@@ -40,7 +40,7 @@
 namespace toit {
 
 static int make_socket() {
-  int fd = zsock_socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+  int fd = zsock_socket(ZSOCK_FAMILY, SOCK_STREAM, IPPROTO_TCP);
   if (fd < 0) return -1;
   if (zsock_fcntl(fd, ZVFS_F_SETFL, ZVFS_O_NONBLOCK) < 0) {
     int error = errno;
@@ -108,7 +108,7 @@ static Object* register_socket(SocketResourceGroup* resource_group, int fd, Proc
 PRIMITIVE(connect) {
   ARGS(SocketResourceGroup, resource_group, Blob, address, int, port, int, window_size);
   USE(window_size);  // Zephyr sizes TCP windows by Kconfig.
-  struct sockaddr_in6 addr;
+  zsock_addr_t addr;
   if (!zsock_address_from_bytes(address.address(), address.length(), port, &addr)) FAIL(INVALID_ARGUMENT);
   int fd = make_socket();
   if (fd == -1) return Primitive::os_error(errno, process);
@@ -143,7 +143,7 @@ PRIMITIVE(accept) {
 
 PRIMITIVE(listen) {
   ARGS(SocketResourceGroup, resource_group, cstring, hostname, int, port, int, backlog);
-  struct sockaddr_in6 addr;
+  zsock_addr_t addr;
   if (!zsock_address_from_string(hostname, port, &addr)) FAIL(INVALID_ARGUMENT);
   int fd = make_socket();
   if (fd == -1) return Primitive::os_error(errno, process);

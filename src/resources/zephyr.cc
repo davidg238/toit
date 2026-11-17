@@ -43,6 +43,12 @@
 
 #include "../event_sources/zephyr_keys.h"
 
+#if defined(CONFIG_WIFI)
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/wifi_mgmt.h>
+#include <zephyr/net/dhcpv4.h>
+#endif
+
 #if defined(CONFIG_NET_L2_OPENTHREAD)
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/openthread.h>
@@ -364,6 +370,99 @@ PRIMITIVE(thread_down) {
   openthread_mutex_unlock();
   if (error != OT_ERROR_NONE) FAIL(HARDWARE_ERROR);
   return BOOL(disable);
+#else
+  FAIL(UNSUPPORTED);
+#endif
+}
+
+// Which link the build carries, for the system program's network provider:
+// 0 none, 1 Thread, 2 WiFi.
+PRIMITIVE(link_kind) {
+#if defined(CONFIG_NET_L2_OPENTHREAD)
+  return Smi::from(1);
+#elif defined(CONFIG_WIFI)
+  return Smi::from(2);
+#else
+  return Smi::from(0);
+#endif
+}
+
+// WiFi station (rete's radio_wifi_connect is the model): up starts the
+// association with the build's credentials (CONFIG_TOIT_WIFI_SSID/_PSK, from a
+// git-ignored local conf), starts DHCPv4 and returns. Toit polls
+// wifi_ready, which is true once the interface holds an IPv4 address. Down
+// disconnects. A WiFi build is IPv4-only: sockets are AF_INET
+// (socket_address_zephyr.h).
+#if defined(CONFIG_WIFI)
+// The association's outcome on the console: a refused or lost association
+// otherwise reads only as Toit's connect timeout.
+static void wifi_event(struct net_mgmt_event_callback* cb, uint64_t event, struct net_if* iface) {
+  const struct wifi_status* status = static_cast<const struct wifi_status*>(cb->info);
+  printk("wifi: %s status=%d\n",
+         event == NET_EVENT_WIFI_CONNECT_RESULT ? "connect" : "disconnect",
+         status ? status->status : -1);
+}
+static struct net_mgmt_event_callback wifi_callback;
+static bool wifi_callback_added = false;
+
+// Associated and leased. The address alone is not enough: it outlives a
+// disconnect until DHCP is stopped.
+static bool wifi_is_ready(struct net_if* iface) {
+  struct wifi_iface_status status = {};
+  if (net_mgmt(NET_REQUEST_WIFI_IFACE_STATUS, iface, &status, sizeof(status)) != 0) return false;
+  return status.state == WIFI_STATE_COMPLETED &&
+         net_if_ipv4_get_global_addr(iface, NET_ADDR_PREFERRED) != null;
+}
+#endif
+
+PRIMITIVE(wifi_up) {
+#if defined(CONFIG_WIFI)
+  struct net_if* iface = net_if_get_first_wifi();
+  if (iface == null) FAIL(HARDWARE_ERROR);
+  if (!wifi_callback_added) {
+    net_mgmt_init_event_callback(&wifi_callback, wifi_event,
+                                 NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT);
+    net_mgmt_add_event_callback(&wifi_callback);
+    wifi_callback_added = true;
+  }
+  if (wifi_is_ready(iface)) return process->null_object();
+  struct wifi_connect_req_params params;
+  memset(&params, 0, sizeof(params));
+  params.ssid = reinterpret_cast<const uint8_t*>(CONFIG_TOIT_WIFI_SSID);
+  params.ssid_length = strlen(CONFIG_TOIT_WIFI_SSID);
+  params.psk = reinterpret_cast<const uint8_t*>(CONFIG_TOIT_WIFI_PSK);
+  params.psk_length = strlen(CONFIG_TOIT_WIFI_PSK);
+  params.security = WIFI_SECURITY_TYPE_PSK;
+  params.channel = WIFI_CHANNEL_ANY;
+  params.band = WIFI_FREQ_BAND_2_4_GHZ;
+  params.mfp = WIFI_MFP_OPTIONAL;
+  int result = net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &params, sizeof(params));
+  // -EALREADY: an association is already in progress.
+  if (result != 0 && result != -EALREADY) FAIL(HARDWARE_ERROR);
+  net_dhcpv4_start(iface);  // As rete's wifi_bringup: the lease is not automatic.
+  return process->null_object();
+#else
+  FAIL(UNSUPPORTED);
+#endif
+}
+
+PRIMITIVE(wifi_ready) {
+#if defined(CONFIG_WIFI)
+  struct net_if* iface = net_if_get_first_wifi();
+  if (iface == null) return BOOL(false);
+  return BOOL(net_if_is_up(iface) && wifi_is_ready(iface));
+#else
+  FAIL(UNSUPPORTED);
+#endif
+}
+
+PRIMITIVE(wifi_down) {
+#if defined(CONFIG_WIFI)
+  struct net_if* iface = net_if_get_first_wifi();
+  if (iface == null) return process->null_object();
+  net_dhcpv4_stop(iface);  // Drops the lease, so a stale address cannot read as up.
+  (void)net_mgmt(NET_REQUEST_WIFI_DISCONNECT, iface, null, 0);
+  return process->null_object();
 #else
   FAIL(UNSUPPORTED);
 #endif

@@ -306,6 +306,10 @@ namespace toit {
   PRIMITIVE(thread_up, 0)                    \
   PRIMITIVE(thread_role, 0)                  \
   PRIMITIVE(thread_down, 1)                  \
+  PRIMITIVE(link_kind, 0)                    \
+  PRIMITIVE(wifi_up, 0)                      \
+  PRIMITIVE(wifi_ready, 0)                   \
+  PRIMITIVE(wifi_down, 0)                    \
 
 #define MODULE_UNIX_SOCKET(PRIMITIVE)        \
   PRIMITIVE(init, 0)                         \

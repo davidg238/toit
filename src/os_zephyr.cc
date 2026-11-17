@@ -103,6 +103,7 @@ struct ThreadData {
   struct k_thread thread;
   k_thread_stack_t* stack;
   struct k_sem terminated;
+  Thread* owner;  // Thread::current() finds it from k_current_get().
 };
 
 Thread::Thread(const char* name)
@@ -120,8 +121,17 @@ static void zephyr_thread_start(void* arg, void*, void*) {
   thread_start(arg);
 }
 
+// The current Toit thread is found from the Zephyr thread, with no per-thread
+// slot: a spawned thread's k_thread sits in its ThreadData, and the one thread
+// Toit did not spawn (main, the system thread) is recorded here. Not
+// k_thread_custom_data: Zephyr has one such slot, and Espressif's WiFi adapter
+// (esp_wifi_adapter.c) keeps a semaphore in it, set on main during WiFi init.
+// Not __thread: the ESP32 has no ARCH_HAS_THREAD_LOCAL_STORAGE in Zephyr 4.2,
+// where it compiles to one global shared by all threads (ztoit, rete #521).
+static k_tid_t system_tid_ = null;
+static Thread* system_thread_ = null;
+
 void Thread::_boot() {
-  k_thread_custom_data_set(this);
   ASSERT(current() == this);
   entry();
   if (handle_ != null) {
@@ -141,6 +151,7 @@ bool Thread::spawn(int stack_size, int core) {
     return false;
   }
   k_sem_init(&data->terminated, 0, 1);
+  data->owner = this;
   handle_ = void_cast(data);
   k_tid_t tid = k_thread_create(&data->thread, data->stack, stack_size,
                                 zephyr_thread_start, this, null, null,
@@ -165,14 +176,18 @@ void Thread::join() {
 }
 
 void Thread::ensure_system_thread() {
-  if (k_thread_custom_data_get() != null) return;
+  if (system_thread_ != null) return;
   Thread* thread = _new SystemThread();
   if (thread == null) FATAL("unable to allocate SystemThread");
-  k_thread_custom_data_set(thread);
+  system_tid_ = k_current_get();
+  system_thread_ = thread;
 }
 
 Thread* Thread::current() {
-  Thread* result = static_cast<Thread*>(k_thread_custom_data_get());
+  k_tid_t tid = k_current_get();
+  Thread* result = (tid == system_tid_)
+      ? system_thread_
+      : CONTAINER_OF(tid, ThreadData, thread)->owner;
   if (result == null) FATAL("thread must be present");
   return result;
 }
@@ -228,7 +243,14 @@ void OS::dispose(ConditionVariable* condition) { delete condition; }
 // --- Toit heap pages --------------------------------------------------------
 // Pages come from one static arena, so the GC metadata covers exactly it.
 
+// CONFIG_TOIT_HEAP_NOINIT puts the arena in .noinit, which the ESP32 links into
+// its second DRAM bank (CONFIG_ESP32_REGION_1_NOINIT), leaving the first to the C
+// heap that thread stacks and GC metadata come from (ztoit WROOM-32, rete #521).
+#if defined(CONFIG_TOIT_HEAP_NOINIT)
+static uint8 toit_arena[CONFIG_TOIT_HEAP_SIZE] __noinit __aligned(TOIT_PAGE_SIZE);
+#else
 static uint8 toit_arena[CONFIG_TOIT_HEAP_SIZE] __aligned(TOIT_PAGE_SIZE);
+#endif
 static struct sys_heap toit_heap;
 static struct k_spinlock toit_heap_lock;
 

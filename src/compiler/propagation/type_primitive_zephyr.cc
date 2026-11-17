@@ -33,6 +33,10 @@ TYPE_PRIMITIVE_SMI(key_state)
 TYPE_PRIMITIVE_NULL(thread_up)
 TYPE_PRIMITIVE_SMI(thread_role)
 TYPE_PRIMITIVE_BOOL(thread_down)
+TYPE_PRIMITIVE_SMI(link_kind)
+TYPE_PRIMITIVE_NULL(wifi_up)
+TYPE_PRIMITIVE_BOOL(wifi_ready)
+TYPE_PRIMITIVE_NULL(wifi_down)
 
 }  // namespace toit::compiler
 }  // namespace toit

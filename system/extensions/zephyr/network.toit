@@ -20,24 +20,28 @@ import ..shared.network-base
 
 THREAD-ATTACH-TIMEOUT-MS_ ::= 60_000  // As ztoit's boot-time attach was.
 THREAD-ROLE-CHILD_ ::= 2  // otDeviceRole: child, router (3) and leader (4) are attached.
+WIFI-CONNECT-TIMEOUT-MS_ ::= 30_000  // Association plus DHCP; not tuned.
+LINK-THREAD_ ::= 1  // link-kind_.
+LINK-WIFI_ ::= 2
 
 /**
 net.open on Zephyr: sockets run in the client process on the VM's own
   primitives (udp_zephyr.cc), so nothing is proxied, as on the host.
-Thread comes up on the first open and goes down after the last close
-  (the stock $NetworkState count). Without Thread in the build, open throws.
+The build's link (Thread or WiFi, $link-kind_) comes up on the first open
+  and goes down after the last close (the stock $NetworkState count). Without
+  either in the build, open throws.
 */
 class ZephyrNetworkProvider extends NetworkServiceProviderBase:
   state_ ::= NetworkState
 
   constructor:
-    super "system/network/zephyr" --major=0 --minor=2 --tags=["thread"]
+    super "system/network/zephyr" --major=0 --minor=2 --tags=[link-name_]
 
   connect client/int -> List:
-    state_.up: ThreadModule
+    state_.up: link-kind_ == LINK-WIFI_ ? WifiModule : ThreadModule
     try:
       resource := NetworkResource this client state_
-      return [resource.serialize-for-rpc, NetworkService.PROXY-NONE, "thread"]
+      return [resource.serialize-for-rpc, NetworkService.PROXY-NONE, link-name_]
     finally: | is-exception exception |
       if is-exception:
         critical-do: state_.down
@@ -61,6 +65,38 @@ class ThreadModule implements NetworkModule:
     // A failed attach disables Thread rather than leave it retrying.
     detached := thread-down_ (not attached_)
     print "thread: down $(detached ? "detached" : "sed")"
+
+class WifiModule implements NetworkModule:
+  connect -> none:
+    start := Time.monotonic-us
+    wifi-up_
+    deadline := start + WIFI-CONNECT-TIMEOUT-MS_ * 1_000
+    while not wifi-ready_:
+      if Time.monotonic-us > deadline:
+        wifi-down_
+        print "wifi: connect timed out"
+        throw "wifi: connect timed out"
+      sleep --ms=100
+    print "wifi: up in $((Time.monotonic-us - start) / 1_000) ms"
+
+  disconnect -> none:
+    wifi-down_
+    print "wifi: down"
+
+link-name_ -> string:
+  return link-kind_ == LINK-WIFI_ ? "wifi" : "thread"
+
+link-kind_ -> int:
+  #primitive.zephyr.link-kind
+
+wifi-up_ -> none:
+  #primitive.zephyr.wifi-up
+
+wifi-ready_ -> bool:
+  #primitive.zephyr.wifi-ready
+
+wifi-down_ -> none:
+  #primitive.zephyr.wifi-down
 
 thread-up_ -> none:
   #primitive.zephyr.thread-up
