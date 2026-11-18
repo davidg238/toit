@@ -96,10 +96,20 @@ void FlashRegistry::tear_down() {
 #endif
 }
 
-// Espressif's flash write and erase invalidate the cache over the range they
-// touch, so the mapped view is coherent without an explicit flush (as on ESP32).
+// The ESP32's mapped view is read through the flash cache, and the HAL's write
+// does not flush it for this mapping: esp_mmu_paddr_find_caps() answers
+// ESP_ERR_NOT_FOUND for the registry's addresses under Zephyr 4.2, so
+// spi_flash_check_and_flush_cache() skips them. A page read while erased and
+// then written kept reading erased (32 of 32 pages, ztoit#31), which failed
+// FlashAllocation::commit's validity check. cache_sync() flushes the whole
+// cache; with it the same 32 pages read back written.
 // nRF's NVMC writes through to the array that the bus reads directly.
+#if defined(CONFIG_SOC_SERIES_ESP32)
+extern "C" void cache_sync(void);  // hal_espressif, components/esp_mm/cache_esp32.c
+void FlashRegistry::flush() { cache_sync(); }
+#else
 void FlashRegistry::flush() {}
+#endif
 
 int FlashRegistry::allocations_size() {
   return static_cast<int>(partition_size);
