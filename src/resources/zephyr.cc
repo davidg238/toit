@@ -57,11 +57,18 @@
 #include <openthread/thread.h>
 #endif
 
-// Called before the link is taken down (wifi_down, a detaching thread_down),
-// so the firmware can finish what it is doing on it first: ztoit's agent
-// waits for a check-in that has begun (rete #521). Weak, so a firmware
-// without one links.
+// Called before the link is taken down (wifi_down, thread_down), so the
+// firmware can finish what it is doing on it first: ztoit's agent waits for a
+// check-in that has begun (rete #521). A sleepy end device's "down" is a long
+// poll period, which stalls replies just as a detach drops them. Weak, so a
+// firmware without one links.
 extern "C" __attribute__((weak)) void ztoit_link_going_down(void) {}
+
+// Called on each thread_up: a Thread node stays attached between net.opens,
+// so no address event marks one, and ztoit's agent checks in on this instead
+// (ztoit#31). WiFi keeps the agent's IPv4 address event: wifi_up returns
+// before the lease. Weak, as above.
+extern "C" __attribute__((weak)) void ztoit_link_up(void) {}
 
 namespace toit {
 
@@ -329,6 +336,7 @@ PRIMITIVE(thread_up) {
     int up = iface ? net_if_up(iface) : -ENODEV;
     if (up < 0 && up != -EALREADY) FAIL(HARDWARE_ERROR);
     thread_started = true;
+    ztoit_link_up();
     return process->null_object();
   }
   otInstance* instance = openthread_get_default_instance();
@@ -339,6 +347,7 @@ PRIMITIVE(thread_up) {
   }
   openthread_mutex_unlock();
   if (error != OT_ERROR_NONE) FAIL(HARDWARE_ERROR);
+  ztoit_link_up();
   return process->null_object();
 #else
   FAIL(UNSUPPORTED);
@@ -369,7 +378,7 @@ PRIMITIVE(thread_down) {
   // Never started (thread_up failed): already down. Throwing here would hide
   // thread_up's error, since NetworkState.up disconnects after a failed connect.
   if (!thread_started) return BOOL(disable);
-  if (disable) ztoit_link_going_down();
+  ztoit_link_going_down();
   otInstance* instance = openthread_get_default_instance();
   openthread_mutex_lock();
   otError error = disable
