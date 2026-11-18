@@ -102,11 +102,20 @@ void FlashRegistry::tear_down() {
 // spi_flash_check_and_flush_cache() skips them. A page read while erased and
 // then written kept reading erased (32 of 32 pages, ztoit#31), which failed
 // FlashAllocation::commit's validity check. cache_sync() flushes the whole
-// cache; with it the same 32 pages read back written.
+// cache; with it the same 32 pages read back written. The ESP32-C6 is stale
+// the same way (32 of 32) and has no whole-cache flush here, so the registry's
+// mapping is invalidated instead.
 // nRF's NVMC writes through to the array that the bus reads directly.
 #if defined(CONFIG_SOC_SERIES_ESP32)
 extern "C" void cache_sync(void);  // hal_espressif, components/esp_mm/cache_esp32.c
 void FlashRegistry::flush() { cache_sync(); }
+#elif defined(TOIT_FLASH_MMAP)
+extern "C" void cache_hal_invalidate_addr(uint32_t vaddr, uint32_t size);  // hal_espressif, components/hal/cache_hal.c
+void FlashRegistry::flush() {
+  if (allocations_memory_ != null) {
+    cache_hal_invalidate_addr(reinterpret_cast<uint32_t>(allocations_memory_), partition_size);
+  }
+}
 #else
 void FlashRegistry::flush() {}
 #endif
