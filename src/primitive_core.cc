@@ -132,7 +132,8 @@ static Object* write_on_std(const uint8* bytes, size_t length, bool is_stdout, b
   return process->null_object();
 }
 
-#elif (_POSIX_C_SOURCE >= 199309L || _BSD_SOURCE) && defined(_POSIX_THREAD_SAFE_FUNCTIONS)
+// Not on Zephyr: from 4.5 it defines _POSIX_THREAD_SAFE_FUNCTIONS, but picolibc has no *_unlocked stdio.
+#elif !defined(TOIT_ZEPHYR) && (_POSIX_C_SOURCE >= 199309L || _BSD_SOURCE) && defined(_POSIX_THREAD_SAFE_FUNCTIONS)
 
 static Object* write_on_std(const uint8* bytes, size_t length, bool is_stdout, bool newline, Process* process) {
   FILE* stream = is_stdout ? stdout : stderr;

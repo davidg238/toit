@@ -53,12 +53,12 @@ static int const SCAN_RESERVED = 2;
 
 PRIMITIVE(next) {
   PRIVILEGED;
-  ARGS(word, current);
+  ARGS(word, offset);  // Not `current`: ARGS declares `_raw_<name>`, and Zephyr 4.5 defines `_raw_current`.
   int result;
-  if (current == -1) {
+  if (offset == -1) {
     reservation_scan = reservations.begin();
     result = 0;
-  } else if (current != flash_registry_offset_current) {
+  } else if (offset != flash_registry_offset_current) {
     FAIL(OUT_OF_BOUNDS);
   } else {
     result = flash_registry_offset_next;
@@ -76,14 +76,14 @@ PRIMITIVE(next) {
 
 PRIMITIVE(info) {
   PRIVILEGED;
-  ARGS(word, current);
-  if (current < 0 || flash_registry_offset_current != current) {
+  ARGS(word, offset);
+  if (offset < 0 || flash_registry_offset_current != offset) {
     FAIL(OUT_OF_BOUNDS);
   }
-  const FlashAllocation* allocation = FlashRegistry::allocation(current);
-  word page_size = (flash_registry_offset_next - current) >> 12;
+  const FlashAllocation* allocation = FlashRegistry::allocation(offset);
+  word page_size = (flash_registry_offset_next - offset) >> 12;
   if (allocation == null) {
-    if (reservation_scan != reservations.end() && current == reservation_scan->left()) {
+    if (reservation_scan != reservations.end() && offset == reservation_scan->left()) {
       ++reservation_scan;
       return Smi::from(SCAN_RESERVED);
     } else {
