@@ -164,6 +164,29 @@ class Key:
     state_.dispose
 
 /**
+An LC3 encoder: 16 kHz, 16-bit, mono audio in 10 ms frames, as the $Microphone records it.
+There is one encoder: constructing a new one resets it, so only the newest is in use.
+*/
+class Lc3Encoder:
+  static RATE ::= 16000
+  static FRAME-US ::= 10_000
+  /** The PCM bytes of one frame: 160 samples of little-endian int16. */
+  static FRAME-PCM-BYTES ::= 320
+
+  frame-bytes/int
+
+  /** An encoder at $bitrate bits per second (32 kbit/s gives 40-byte frames). */
+  constructor --bitrate/int=32_000:
+    frame-bytes = zephyr-lc3-setup_ bitrate
+
+  /**
+  Encodes $pcm, whole frames of little-endian int16 samples, and returns the encoded frames
+    back to back, $frame-bytes each.
+  */
+  encode pcm/ByteArray -> ByteArray:
+    return zephyr-lc3-encode_ pcm
+
+/**
 A PDM microphone, for example the one at devicetree node label "pdm20".
 It records 16 kHz, 16-bit, mono audio in blocks of 100 ms.
 */
@@ -253,3 +276,9 @@ zephyr-mic-read_ device/int -> ByteArray?:
 
 zephyr-mic-stop_ device/int -> none:
   #primitive.zephyr.mic-stop
+
+zephyr-lc3-setup_ bitrate/int -> int:
+  #primitive.zephyr.lc3-setup
+
+zephyr-lc3-encode_ pcm/ByteArray -> ByteArray:
+  #primitive.zephyr.lc3-encode

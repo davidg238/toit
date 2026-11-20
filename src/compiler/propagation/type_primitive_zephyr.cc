@@ -41,6 +41,8 @@ TYPE_PRIMITIVE_ANY(i2c_transfer)
 TYPE_PRIMITIVE_BOOL(mic_start)
 TYPE_PRIMITIVE_ANY(mic_read)
 TYPE_PRIMITIVE_NULL(mic_stop)
+TYPE_PRIMITIVE_SMI(lc3_setup)
+TYPE_PRIMITIVE_ANY(lc3_encode)
 
 }  // namespace toit::compiler
 }  // namespace toit

@@ -39,6 +39,9 @@
 #if defined(CONFIG_AUDIO_DMIC)
 #include <zephyr/audio/dmic.h>
 #endif
+#if defined(CONFIG_LIBLC3)
+#include <lc3.h>
+#endif
 
 #include "../objects.h"
 #include "../objects_inline.h"
@@ -349,6 +352,55 @@ PRIMITIVE(mic_stop) {
   if (!::is_dmic(dev)) FAIL(WRONG_OBJECT_TYPE);  // A label of another class.
   mic_release(dev);
   return process->null_object();
+#else
+  FAIL(UNSUPPORTED);
+#endif
+}
+
+#if defined(CONFIG_LIBLC3)
+// One LC3 encoder, static like the microphone's slab: 16 kHz, 10 ms frames.
+static const int LC3_RATE = 16000;
+static const int LC3_FRAME_US = 10000;
+static const int LC3_FRAME_PCM_BYTES = 160 * 2;  // 160 samples of int16.
+static lc3_encoder_mem_16k_t lc3_mem;
+static lc3_encoder_t lc3_encoder = null;
+static int lc3_frame_size = 0;
+#endif
+
+// Sets up the one LC3 encoder at the given bit rate, resetting it if it was in use.
+// Returns the size of one encoded frame.
+PRIMITIVE(lc3_setup) {
+  ARGS(int, bitrate);
+#if defined(CONFIG_LIBLC3)
+  int bytes = lc3_frame_bytes(LC3_FRAME_US, bitrate);
+  if (bytes < 20 || bytes > 400) FAIL(INVALID_ARGUMENT);
+  lc3_encoder = lc3_setup_encoder(LC3_FRAME_US, LC3_RATE, 0, &lc3_mem);
+  if (lc3_encoder == null) FAIL(INVALID_ARGUMENT);
+  lc3_frame_size = bytes;
+  return Smi::from(bytes);
+#else
+  FAIL(UNSUPPORTED);
+#endif
+}
+
+// Encodes whole 10 ms frames of 16 kHz little-endian int16 PCM; returns the frames back to back.
+PRIMITIVE(lc3_encode) {
+  ARGS(Blob, pcm);
+#if defined(CONFIG_LIBLC3)
+  if (lc3_encoder == null) FAIL(INVALID_ARGUMENT);
+  int length = pcm.length();
+  if (length <= 0 || length % LC3_FRAME_PCM_BYTES != 0) FAIL(INVALID_ARGUMENT);
+  int frames = length / LC3_FRAME_PCM_BYTES;
+  ByteArray* result = process->allocate_byte_array(frames * lc3_frame_size);
+  if (result == null) FAIL(ALLOCATION_FAILED);
+  uint8* out = ByteArray::Bytes(result).address();
+  for (int i = 0; i < frames; i++) {
+    const void* in = pcm.address() + i * LC3_FRAME_PCM_BYTES;
+    if (lc3_encode(lc3_encoder, LC3_PCM_FORMAT_S16, in, 1, lc3_frame_size, out + i * lc3_frame_size) != 0) {
+      FAIL(INVALID_ARGUMENT);
+    }
+  }
+  return result;
 #else
   FAIL(UNSUPPORTED);
 #endif

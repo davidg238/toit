@@ -314,6 +314,8 @@ namespace toit {
   PRIMITIVE(mic_start, 2)                    \
   PRIMITIVE(mic_read, 1)                     \
   PRIMITIVE(mic_stop, 1)                     \
+  PRIMITIVE(lc3_setup, 1)                    \
+  PRIMITIVE(lc3_encode, 1)                   \
 
 #define MODULE_UNIX_SOCKET(PRIMITIVE)        \
   PRIMITIVE(init, 0)                         \
