@@ -365,10 +365,11 @@ static const int LC3_FRAME_PCM_BYTES = 160 * 2;  // 160 samples of int16.
 static lc3_encoder_mem_16k_t lc3_mem;
 static lc3_encoder_t lc3_encoder = null;
 static int lc3_frame_size = 0;
+static int lc3_generation = 0;  // Bumped by each setup; an older encoder's encode fails.
 #endif
 
-// Sets up the one LC3 encoder at the given bit rate, resetting it if it was in use.
-// Returns the size of one encoded frame.
+// Sets up the one LC3 encoder at the given bit rate, taking it over from any earlier owner.
+// Returns generation * 512 + the size of one encoded frame (at most 400 bytes).
 PRIMITIVE(lc3_setup) {
   ARGS(int, bitrate);
 #if defined(CONFIG_LIBLC3)
@@ -378,7 +379,8 @@ PRIMITIVE(lc3_setup) {
   lc3_encoder = lc3_setup_encoder(LC3_FRAME_US, LC3_RATE, 0, &lc3_mem);
   if (lc3_encoder == null) FAIL(INVALID_ARGUMENT);
   lc3_frame_size = bytes;
-  return Smi::from(bytes);
+  lc3_generation = (lc3_generation + 1) & 0xfffff;  // Fits a Smi once shifted.
+  return Smi::from(lc3_generation * 512 + bytes);
 #else
   FAIL(UNSUPPORTED);
 #endif
@@ -386,9 +388,10 @@ PRIMITIVE(lc3_setup) {
 
 // Encodes whole 10 ms frames of 16 kHz little-endian int16 PCM; returns the frames back to back.
 PRIMITIVE(lc3_encode) {
-  ARGS(Blob, pcm);
+  ARGS(Blob, pcm, int, generation);
 #if defined(CONFIG_LIBLC3)
   if (lc3_encoder == null) FAIL(INVALID_ARGUMENT);
+  if (generation != lc3_generation) FAIL(ALREADY_CLOSED);  // A newer encoder took the state over.
   int length = pcm.length();
   if (length <= 0 || length % LC3_FRAME_PCM_BYTES != 0) FAIL(INVALID_ARGUMENT);
   int frames = length / LC3_FRAME_PCM_BYTES;
