@@ -175,7 +175,7 @@ class Lc3Encoder:
 
   frame-bytes/int
 
-  /** An encoder at $bitrate bits per second (32 kbit/s gives 40-byte frames). */
+  /** An encoder at $bitrate bits per second, 16000 to 320000 (32 kbit/s gives 40-byte frames). */
   constructor --bitrate/int=32_000:
     frame-bytes = zephyr-lc3-setup_ bitrate
 

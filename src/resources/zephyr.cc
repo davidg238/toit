@@ -372,8 +372,9 @@ static int lc3_frame_size = 0;
 PRIMITIVE(lc3_setup) {
   ARGS(int, bitrate);
 #if defined(CONFIG_LIBLC3)
+  // lc3_frame_bytes clamps an out-of-range bit rate instead of failing, so check it here.
+  if (bitrate < LC3_MIN_BITRATE || bitrate > LC3_MAX_BITRATE) FAIL(INVALID_ARGUMENT);
   int bytes = lc3_frame_bytes(LC3_FRAME_US, bitrate);
-  if (bytes < 20 || bytes > 400) FAIL(INVALID_ARGUMENT);
   lc3_encoder = lc3_setup_encoder(LC3_FRAME_US, LC3_RATE, 0, &lc3_mem);
   if (lc3_encoder == null) FAIL(INVALID_ARGUMENT);
   lc3_frame_size = bytes;
