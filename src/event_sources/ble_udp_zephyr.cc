@@ -53,7 +53,8 @@ static const int RING_PER_SOCK = 2 * (2 + SDU_MTU);
 // The relay's service UUID, so the phone can filter its scan.
 #define RELAY_UUID BT_UUID_128_ENCODE(0x6f657673, 0x6d00, 0x4000, 0x8000, 0x00000000439aULL)
 
-NET_BUF_POOL_DEFINE(ble_udp_tx_pool, 2, BT_L2CAP_SDU_BUF_SIZE(SDU_MTU), CONFIG_BT_CONN_TX_USER_DATA_SIZE, NULL);
+static void tx_buf_freed(struct net_buf* buf);
+NET_BUF_POOL_DEFINE(ble_udp_tx_pool, 2, BT_L2CAP_SDU_BUF_SIZE(SDU_MTU), CONFIG_BT_CONN_TX_USER_DATA_SIZE, tx_buf_freed);
 NET_BUF_POOL_DEFINE(ble_udp_rx_pool, 1, BT_L2CAP_SDU_BUF_SIZE(SDU_MTU), 8, NULL);
 
 static struct bt_l2cap_le_chan le_chan;
@@ -108,7 +109,7 @@ static int recv_cb(struct bt_l2cap_chan* chan, struct net_buf* buf) {
   int s = -1;
   if (relay_frame_parse(buf->data, len, &f) == 0) {
     for (int i = 0; i < MAX_SOCKS; i++) {
-      if (sock_port[i] == f.local_port) { s = i; break; }
+      if (sock_port[i] != 0 && sock_port[i] == f.local_port) { s = i; break; }  // 0 is a free slot.
     }
   }
   bool queued = false;
@@ -127,10 +128,16 @@ static int recv_cb(struct bt_l2cap_chan* chan, struct net_buf* buf) {
   return 0;  // The stack frees buf.
 }
 
-static void sent_cb(struct bt_l2cap_chan* chan) {
-  (void)chan;
+// A sender that got EAGAIN waits for UDP_WRITE: signal it when a transmit buffer is
+// back in the pool. The channel's sent callback is not used, since nothing orders it
+// after the buffer's release.
+static void wake_writers() {
   atomic_set(&pending_write, 1);
   k_sem_give(&ble_udp_sem);
+}
+static void tx_buf_freed(struct net_buf* buf) {
+  net_buf_destroy(buf);
+  wake_writers();
 }
 
 static void connected_cb(struct bt_l2cap_chan* chan) {
@@ -146,7 +153,7 @@ static void disconnected_cb(struct bt_l2cap_chan* chan) {
   chan_up = false;
   printk("ble: relay channel down\n");
   if (chan->conn) (void)bt_conn_disconnect(chan->conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
-  sent_cb(chan);  // A sender waiting for a buffer now drops instead.
+  wake_writers();  // A sender waiting for a buffer now drops instead.
 }
 
 static const struct bt_l2cap_chan_ops chan_ops = {
@@ -154,7 +161,6 @@ static const struct bt_l2cap_chan_ops chan_ops = {
   .disconnected = disconnected_cb,
   .alloc_buf = alloc_buf_cb,
   .recv = recv_cb,
-  .sent = sent_cb,
 };
 
 static int accept_cb(struct bt_conn* conn, struct bt_l2cap_server* server, struct bt_l2cap_chan** chan) {
@@ -284,7 +290,7 @@ void BleUdpEventSource::entry() {
   }
 }
 
-// A new socket can send at once; a full buffer pool later clears that until sent_cb.
+// A new socket can send at once; a full buffer pool later clears that until a buffer frees.
 void BleUdpEventSource::on_register_resource(Locker& locker, Resource* r) {
   dispatch(locker, r, UDP_WRITE);
 }
@@ -314,10 +320,20 @@ int BleUdpEventSource::bind(int port) {
   for (int i = 0; i < MAX_SOCKS; i++) {
     if (port != 0 && sock_port[i] == port) taken = true;
   }
+  if (!taken && port == 0) {  // The lowest ephemeral port no socket holds.
+    for (port = EPHEMERAL_BASE; ; port++) {
+      bool used = false;
+      for (int i = 0; i < MAX_SOCKS; i++) used = used || sock_port[i] == port;
+      if (!used) break;
+    }
+  }
   if (!taken) {
     for (int i = 0; i < MAX_SOCKS; i++) {
       if (sock_port[i] == 0) {
-        sock_port[i] = port ? port : EPHEMERAL_BASE + i;
+        k_mutex_lock(&ring_lock, K_FOREVER);
+        ring_clear(i);  // Nothing stale reaches the new socket.
+        sock_port[i] = port;
+        k_mutex_unlock(&ring_lock);
         id = i;
         break;
       }
@@ -363,8 +379,12 @@ int BleUdpEventSource::send(int id, const uint8_t addr[16], int remote_port, con
         net_buf_add(buf, h);
         net_buf_add_mem(buf, data, len);
         int err = bt_l2cap_chan_send(&le_chan.chan, buf);
-        // A channel that closed under us drops the datagram, as above.
         if (err < 0) net_buf_unref(buf);
+        if (err == -EMSGSIZE) {  // Over the relay's receive MTU.
+          errno = EMSGSIZE;
+          result = -1;
+        }
+        // Any other error is a channel that closed under us: dropped, as above.
       }
     }
   }
