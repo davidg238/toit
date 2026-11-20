@@ -268,19 +268,21 @@ PRIMITIVE(i2c_transfer) {
 static void* mic_pending = null;
 #endif
 
-// Starts the microphone. Returns false while a previous stop is still finishing
-// (the driver is busy); the caller tries again.
+// Starts the microphone, gain_db above the hardware's default gain. Returns false
+// while a previous stop is still finishing (the driver is busy); the caller tries again.
 PRIMITIVE(mic_start) {
-  ARGS(int, device);
+  ARGS(int, device, int, gain_db);
 #if defined(CONFIG_AUDIO_DMIC)
   const struct device* dev = device_at(device);
   if (dev == null) FAIL(INVALID_ARGUMENT);
   if (!::is_dmic(dev)) FAIL(WRONG_OBJECT_TYPE);  // A label of another class.
+  if (gain_db < -20 || gain_db > 20) FAIL(OUT_OF_RANGE);  // The nRF PDM's range.
   struct pcm_stream_cfg stream = {};
   stream.pcm_rate = MIC_RATE;
   stream.pcm_width = 16;
   stream.block_size = MIC_BLOCK_SIZE;
   stream.mem_slab = &mic_slab;
+  stream.gain_db = gain_db;
   struct dmic_cfg cfg = {};
   cfg.io.min_pdm_clk_freq = 1000000;  // The PDM clock range of Zephyr's dmic sample.
   cfg.io.max_pdm_clk_freq = 3500000;

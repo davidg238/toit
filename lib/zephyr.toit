@@ -174,14 +174,20 @@ class Microphone:
   static STALLED-MS_ ::= 1000
 
   device_/int
+  gain-db_/int
 
-  /** The microphone with devicetree node label $label. */
-  constructor label/string:
+  /**
+  The microphone with devicetree node label $label.
+  $gain-db, from -20 to 20, is added to the hardware's default gain.
+  */
+  constructor label/string --gain-db/int=0:
+    if not -20 <= gain-db <= 20: throw "OUT_OF_RANGE"
     device_ = zephyr-device-find_ label
+    gain-db_ = gain-db
 
   /** Starts recording. Waits while a previous $stop is still finishing. */
   start -> none:
-    while not zephyr-mic-start_ device_: sleep --ms=10
+    while not zephyr-mic-start_ device_ gain-db_: sleep --ms=10
 
   /**
   The next 100 ms block of little-endian int16 samples.
@@ -232,7 +238,7 @@ zephyr-key-state_ key/int -> int:
 zephyr-i2c-transfer_ device/int address/int write/ByteArray read-count/int -> ByteArray?:
   #primitive.zephyr.i2c-transfer
 
-zephyr-mic-start_ device/int -> bool:
+zephyr-mic-start_ device/int gain-db/int -> bool:
   #primitive.zephyr.mic-start
 
 zephyr-mic-read_ device/int -> ByteArray?:
