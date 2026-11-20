@@ -33,6 +33,9 @@
 #include <zephyr/drivers/led.h>
 #include <zephyr/drivers/led_strip.h>
 #include <zephyr/input/input.h>
+#if defined(CONFIG_I2C)
+#include <zephyr/drivers/i2c.h>
+#endif
 
 #include "../objects.h"
 #include "../objects_inline.h"
@@ -194,6 +197,38 @@ PRIMITIVE(sensor_read) {
   int ret = sensor_channel_get(dev, static_cast<enum sensor_channel>(channel), &value);
   if (ret != 0) return Primitive::os_error(-ret, process);
   return Primitive::allocate_double(sensor_value_to_double(&value), process);
+#else
+  FAIL(UNSUPPORTED);
+#endif
+}
+
+// One I2C transaction with the target at 7-bit $address on the bus $device:
+// write $write (if not null), then, with a repeated start, read $read_count
+// bytes (if not 0). Returns the bytes read, or null.
+PRIMITIVE(i2c_transfer) {
+  ARGS(int, device, int, address, Blob, write, int, read_count);
+#if defined(CONFIG_I2C)
+  const struct device* dev = device_at(device);
+  if (dev == null) FAIL(INVALID_ARGUMENT);
+  if (address < 0 || address > 0x7f || read_count < 0) FAIL(INVALID_ARGUMENT);
+  if (write.length() == 0 && read_count == 0) FAIL(INVALID_ARGUMENT);
+  ByteArray* result = null;
+  uint8_t* buffer = null;
+  if (read_count > 0) {
+    result = process->allocate_byte_array(read_count);
+    if (result == null) FAIL(ALLOCATION_FAILED);
+    buffer = ByteArray::Bytes(result).address();
+  }
+  int ret;
+  if (write.length() == 0) {
+    ret = i2c_read(dev, buffer, read_count, address);
+  } else if (read_count == 0) {
+    ret = i2c_write(dev, write.address(), write.length(), address);
+  } else {
+    ret = i2c_write_read(dev, address, write.address(), write.length(), buffer, read_count);
+  }
+  if (ret != 0) return Primitive::os_error(-ret, process);
+  return result == null ? process->null_object() : result;
 #else
   FAIL(UNSUPPORTED);
 #endif

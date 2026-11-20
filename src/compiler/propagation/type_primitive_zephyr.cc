@@ -37,6 +37,7 @@ TYPE_PRIMITIVE_SMI(link_kind)
 TYPE_PRIMITIVE_NULL(wifi_up)
 TYPE_PRIMITIVE_BOOL(wifi_ready)
 TYPE_PRIMITIVE_NULL(wifi_down)
+TYPE_PRIMITIVE_ANY(i2c_transfer)
 
 }  // namespace toit::compiler
 }  // namespace toit

@@ -310,6 +310,7 @@ namespace toit {
   PRIMITIVE(wifi_up, 0)                      \
   PRIMITIVE(wifi_ready, 0)                   \
   PRIMITIVE(wifi_down, 0)                    \
+  PRIMITIVE(i2c_transfer, 4)                 \
 
 #define MODULE_UNIX_SOCKET(PRIMITIVE)        \
   PRIMITIVE(init, 0)                         \

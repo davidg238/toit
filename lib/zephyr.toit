@@ -7,10 +7,12 @@ Zephyr devices, named by devicetree node label (ztoit).
 
 The drivers are Zephyr's: any Zephyr sensor works through $Sensor, any LED
   strip through $LedStrip, any `gpio-leds` child through $Led and any
-  `gpio-keys` child through $Key. Wiring is the board's devicetree overlay.
+  `gpio-keys` child through $Key, and any I2C bus through $I2c. Wiring is the
+  board's devicetree overlay.
 */
 
 import monitor
+import serial
 
 /**
 A Zephyr sensor (`zephyr/drivers/sensor.h`), such as a `bosch,bmp180`.
@@ -54,6 +56,58 @@ class LedStrip:
   /** Sets the first pixel to $r, $g, $b. */
   set-pixel r/int g/int b/int -> none:
     set #[r, g, b]
+
+/**
+A Zephyr I2C bus (`zephyr/drivers/i2c.h`), such as "i2c30".
+Its targets are $serial.Device objects, so Toit drivers written for
+  $serial.Registers work on it.
+*/
+class I2c:
+  device_/int
+
+  /** The bus with devicetree node label $label, for example "i2c30". */
+  constructor label/string:
+    device_ = zephyr-device-find_ label
+
+  /** The target at 7-bit $address on this bus. */
+  device address/int -> I2cDevice:
+    if not 0 <= address <= 0x7f: throw "INVALID_ARGUMENT"
+    return I2cDevice.private_ device_ address
+
+/** A target on an $I2c bus, with 8-bit register addresses. */
+class I2cDevice implements serial.Device:
+  bus_/int
+  address_/int
+  registers_/I2cRegisters_? := null
+
+  constructor.private_ .bus_ .address_:
+
+  registers -> serial.Registers:
+    if not registers_: registers_ = I2cRegisters_ this
+    return registers_
+
+  /** Reads $amount bytes from the target. */
+  read amount/int -> ByteArray:
+    return zephyr-i2c-transfer_ bus_ address_ #[] amount
+
+  /** Writes $bytes to the target. */
+  write bytes/ByteArray -> none:
+    zephyr-i2c-transfer_ bus_ address_ bytes 0
+
+  /** Writes $bytes, then reads $amount bytes after a repeated start. */
+  write-read bytes/ByteArray amount/int -> ByteArray:
+    return zephyr-i2c-transfer_ bus_ address_ bytes amount
+
+class I2cRegisters_ extends serial.Registers:
+  device_/I2cDevice
+
+  constructor .device_:
+
+  read-bytes register/int count/int -> ByteArray:
+    return device_.write-read #[register] count
+
+  write-bytes register/int data/ByteArray -> none:
+    device_.write #[register] + data
 
 /** A `gpio-leds` child: a digital output, such as an LED. */
 class Led:
@@ -138,3 +192,6 @@ zephyr-key-open_ group key/int:
 
 zephyr-key-state_ key/int -> int:
   #primitive.zephyr.key-state
+
+zephyr-i2c-transfer_ device/int address/int write/ByteArray read-count/int -> ByteArray?:
+  #primitive.zephyr.i2c-transfer
