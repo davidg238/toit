@@ -185,9 +185,16 @@ class Microphone:
     device_ = zephyr-device-find_ label
     gain-db_ = gain-db
 
-  /** Starts recording. Waits while a previous $stop is still finishing. */
+  /**
+  Starts recording. Takes the microphone over: a recording already running, here
+    or in another process, is stopped first.
+  Throws "MICROPHONE_BUSY" if the driver isn't ready within a second.
+  */
   start -> none:
-    while not zephyr-mic-start_ device_ gain-db_: sleep --ms=10
+    deadline := Time.monotonic-us + STALLED-MS_ * 1000
+    while not zephyr-mic-start_ device_ gain-db_:
+      if Time.monotonic-us > deadline: throw "MICROPHONE_BUSY"
+      sleep --ms=10
 
   /**
   The next 100 ms block of little-endian int16 samples.

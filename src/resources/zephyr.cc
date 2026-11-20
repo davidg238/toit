@@ -266,10 +266,21 @@ PRIMITIVE(i2c_transfer) {
 // A block read from the driver whose copy could not be allocated; the retry
 // after the GC returns it.
 static void* mic_pending = null;
+
+// Stops the microphone and frees every block still queued or pending.
+static void mic_release(const struct device* dev) {
+  dmic_trigger(dev, DMIC_TRIGGER_STOP);  // Nothing to do if it isn't running.
+  if (mic_pending != null) { k_mem_slab_free(&mic_slab, mic_pending); mic_pending = null; }
+  void* block;
+  size_t size;
+  while (dmic_read(dev, 0, &block, &size, 0) == 0) k_mem_slab_free(&mic_slab, block);
+}
 #endif
 
-// Starts the microphone, gain_db above the hardware's default gain. Returns false
-// while a previous stop is still finishing (the driver is busy); the caller tries again.
+// Starts the microphone, gain_db above the hardware's default gain. It takes the
+// microphone over: whatever an earlier owner left running or queued is stopped and
+// freed first. Returns false while that stop is still finishing (the driver is busy);
+// the caller tries again.
 PRIMITIVE(mic_start) {
   ARGS(int, device, int, gain_db);
 #if defined(CONFIG_AUDIO_DMIC)
@@ -283,6 +294,7 @@ PRIMITIVE(mic_start) {
   stream.block_size = MIC_BLOCK_SIZE;
   stream.mem_slab = &mic_slab;
   stream.gain_db = gain_db;
+  mic_release(dev);
   struct dmic_cfg cfg = {};
   cfg.io.min_pdm_clk_freq = 1000000;  // The PDM clock range of Zephyr's dmic sample.
   cfg.io.max_pdm_clk_freq = 3500000;
@@ -335,12 +347,7 @@ PRIMITIVE(mic_stop) {
   const struct device* dev = device_at(device);
   if (dev == null) FAIL(INVALID_ARGUMENT);
   if (!::is_dmic(dev)) FAIL(WRONG_OBJECT_TYPE);  // A label of another class.
-  int ret = dmic_trigger(dev, DMIC_TRIGGER_STOP);
-  if (mic_pending != null) { k_mem_slab_free(&mic_slab, mic_pending); mic_pending = null; }
-  void* block;
-  size_t size;
-  while (dmic_read(dev, 0, &block, &size, 0) == 0) k_mem_slab_free(&mic_slab, block);
-  if (ret != 0) return Primitive::os_error(-ret, process);
+  mic_release(dev);
   return process->null_object();
 #else
   FAIL(UNSUPPORTED);
