@@ -36,6 +36,9 @@
 #if defined(CONFIG_I2C)
 #include <zephyr/drivers/i2c.h>
 #endif
+#if defined(CONFIG_AUDIO_DMIC)
+#include <zephyr/audio/dmic.h>
+#endif
 
 #include "../objects.h"
 #include "../objects_inline.h"
@@ -83,6 +86,16 @@ static bool is_led_strip(const struct device* dev) { return DEVICE_API_IS(led_st
 #endif
 #if defined(CONFIG_I2C)
 static bool is_i2c(const struct device* dev) { return DEVICE_API_IS(i2c, dev); }
+#endif
+#if defined(CONFIG_AUDIO_DMIC)
+static bool is_dmic(const struct device* dev) { return DEVICE_API_IS(dmic, dev); }
+
+// The microphone's fixed format: 16 kHz, 16-bit, mono, 100 ms blocks. The driver
+// fills blocks from this slab; Toit copies each one out and the block goes back.
+#define MIC_RATE 16000
+#define MIC_BLOCK_SIZE (MIC_RATE / 10 * 2)
+#define MIC_BLOCK_COUNT 4
+K_MEM_SLAB_DEFINE_STATIC(mic_slab, MIC_BLOCK_SIZE, MIC_BLOCK_COUNT, 4);
 #endif
 
 namespace toit {
@@ -244,6 +257,89 @@ PRIMITIVE(i2c_transfer) {
   }
   if (ret != 0) return Primitive::os_error(-ret, process);
   return result == null ? process->null_object() : result;
+#else
+  FAIL(UNSUPPORTED);
+#endif
+}
+
+#if defined(CONFIG_AUDIO_DMIC)
+// A block read from the driver whose copy could not be allocated; the retry
+// after the GC returns it.
+static void* mic_pending = null;
+#endif
+
+// Starts the microphone. Returns false while a previous stop is still finishing
+// (the driver is busy); the caller tries again.
+PRIMITIVE(mic_start) {
+  ARGS(int, device);
+#if defined(CONFIG_AUDIO_DMIC)
+  const struct device* dev = device_at(device);
+  if (dev == null) FAIL(INVALID_ARGUMENT);
+  if (!::is_dmic(dev)) FAIL(WRONG_OBJECT_TYPE);  // A label of another class.
+  struct pcm_stream_cfg stream = {};
+  stream.pcm_rate = MIC_RATE;
+  stream.pcm_width = 16;
+  stream.block_size = MIC_BLOCK_SIZE;
+  stream.mem_slab = &mic_slab;
+  struct dmic_cfg cfg = {};
+  cfg.io.min_pdm_clk_freq = 1000000;  // The PDM clock range of Zephyr's dmic sample.
+  cfg.io.max_pdm_clk_freq = 3500000;
+  cfg.io.min_pdm_clk_dc = 40;
+  cfg.io.max_pdm_clk_dc = 60;
+  cfg.streams = &stream;
+  cfg.channel.req_num_streams = 1;
+  cfg.channel.req_num_chan = 1;
+  cfg.channel.req_chan_map_lo = dmic_build_channel_map(0, 0, PDM_CHAN_LEFT);
+  int ret = dmic_configure(dev, &cfg);
+  if (ret == -EBUSY) return BOOL(false);
+  if (ret != 0) return Primitive::os_error(-ret, process);
+  ret = dmic_trigger(dev, DMIC_TRIGGER_START);
+  if (ret != 0) return Primitive::os_error(-ret, process);
+  return BOOL(true);
+#else
+  FAIL(UNSUPPORTED);
+#endif
+}
+
+// The next block as a new ByteArray of little-endian int16 samples, or null if
+// none is ready. Never waits.
+PRIMITIVE(mic_read) {
+  ARGS(int, device);
+#if defined(CONFIG_AUDIO_DMIC)
+  const struct device* dev = device_at(device);
+  if (dev == null) FAIL(INVALID_ARGUMENT);
+  if (!::is_dmic(dev)) FAIL(WRONG_OBJECT_TYPE);  // A label of another class.
+  if (mic_pending == null) {
+    size_t size;
+    int ret = dmic_read(dev, 0, &mic_pending, &size, 0);
+    if (ret == -EAGAIN || ret == -ENOMSG) { mic_pending = null; return process->null_object(); }
+    if (ret != 0) { mic_pending = null; return Primitive::os_error(-ret, process); }
+  }
+  ByteArray* result = process->allocate_byte_array(MIC_BLOCK_SIZE);
+  if (result == null) FAIL(ALLOCATION_FAILED);  // The block stays pending for the retry.
+  memcpy(ByteArray::Bytes(result).address(), mic_pending, MIC_BLOCK_SIZE);
+  k_mem_slab_free(&mic_slab, mic_pending);
+  mic_pending = null;
+  return result;
+#else
+  FAIL(UNSUPPORTED);
+#endif
+}
+
+// Stops the microphone and frees every block still queued, so the next start is clean.
+PRIMITIVE(mic_stop) {
+  ARGS(int, device);
+#if defined(CONFIG_AUDIO_DMIC)
+  const struct device* dev = device_at(device);
+  if (dev == null) FAIL(INVALID_ARGUMENT);
+  if (!::is_dmic(dev)) FAIL(WRONG_OBJECT_TYPE);  // A label of another class.
+  int ret = dmic_trigger(dev, DMIC_TRIGGER_STOP);
+  if (mic_pending != null) { k_mem_slab_free(&mic_slab, mic_pending); mic_pending = null; }
+  void* block;
+  size_t size;
+  while (dmic_read(dev, 0, &block, &size, 0) == 0) k_mem_slab_free(&mic_slab, block);
+  if (ret != 0) return Primitive::os_error(-ret, process);
+  return process->null_object();
 #else
   FAIL(UNSUPPORTED);
 #endif

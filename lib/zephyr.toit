@@ -163,6 +163,42 @@ class Key:
   close -> none:
     state_.dispose
 
+/**
+A PDM microphone, for example the one at devicetree node label "pdm20".
+It records 16 kHz, 16-bit, mono audio in blocks of 100 ms.
+*/
+class Microphone:
+  static RATE ::= 16000
+  // The driver stops by itself when its blocks run out because Toit fell behind,
+  // and then no block comes. No block for this long means that.
+  static STALLED-MS_ ::= 1000
+
+  device_/int
+
+  /** The microphone with devicetree node label $label. */
+  constructor label/string:
+    device_ = zephyr-device-find_ label
+
+  /** Starts recording. Waits while a previous $stop is still finishing. */
+  start -> none:
+    while not zephyr-mic-start_ device_: sleep --ms=10
+
+  /**
+  The next 100 ms block of little-endian int16 samples.
+  Throws "MICROPHONE_STOPPED" if no block comes within a second.
+  */
+  read -> ByteArray:
+    deadline := Time.monotonic-us + STALLED-MS_ * 1000
+    while true:
+      block := zephyr-mic-read_ device_
+      if block: return block
+      if Time.monotonic-us > deadline: throw "MICROPHONE_STOPPED"
+      sleep --ms=10
+
+  /** Stops recording; blocks not yet read are dropped. */
+  stop -> none:
+    zephyr-mic-stop_ device_
+
 zephyr-device-find_ label/string -> int:
   #primitive.zephyr.device-find
 
@@ -195,3 +231,12 @@ zephyr-key-state_ key/int -> int:
 
 zephyr-i2c-transfer_ device/int address/int write/ByteArray read-count/int -> ByteArray?:
   #primitive.zephyr.i2c-transfer
+
+zephyr-mic-start_ device/int -> bool:
+  #primitive.zephyr.mic-start
+
+zephyr-mic-read_ device/int -> ByteArray?:
+  #primitive.zephyr.mic-read
+
+zephyr-mic-stop_ device/int -> none:
+  #primitive.zephyr.mic-stop

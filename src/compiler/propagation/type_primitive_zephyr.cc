@@ -38,6 +38,9 @@ TYPE_PRIMITIVE_NULL(wifi_up)
 TYPE_PRIMITIVE_BOOL(wifi_ready)
 TYPE_PRIMITIVE_NULL(wifi_down)
 TYPE_PRIMITIVE_ANY(i2c_transfer)
+TYPE_PRIMITIVE_BOOL(mic_start)
+TYPE_PRIMITIVE_ANY(mic_read)
+TYPE_PRIMITIVE_NULL(mic_stop)
 
 }  // namespace toit::compiler
 }  // namespace toit
