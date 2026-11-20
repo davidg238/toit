@@ -73,6 +73,18 @@ extern "C" __attribute__((weak)) void ztoit_link_going_down(void) {}
 // before the lease. Weak, as above.
 extern "C" __attribute__((weak)) void ztoit_link_up(void) {}
 
+// Whether a device is of a driver class. DEVICE_API_IS declares the class's
+// linker-section bounds as extern, so it must run outside namespace toit.
+#if defined(CONFIG_SENSOR)
+static bool is_sensor(const struct device* dev) { return DEVICE_API_IS(sensor, dev); }
+#endif
+#if defined(CONFIG_LED_STRIP)
+static bool is_led_strip(const struct device* dev) { return DEVICE_API_IS(led_strip, dev); }
+#endif
+#if defined(CONFIG_I2C)
+static bool is_i2c(const struct device* dev) { return DEVICE_API_IS(i2c, dev); }
+#endif
+
 namespace toit {
 
 // A devicetree node's labels, as `static const char* const name[]`, null-terminated.
@@ -180,6 +192,7 @@ PRIMITIVE(sensor_fetch) {
 #if defined(CONFIG_SENSOR)
   const struct device* dev = device_at(device);
   if (dev == null) FAIL(INVALID_ARGUMENT);
+  if (!::is_sensor(dev)) FAIL(WRONG_OBJECT_TYPE);  // A label of another class.
   int ret = sensor_sample_fetch(dev);
   if (ret != 0) return Primitive::os_error(-ret, process);
   return process->null_object();
@@ -193,6 +206,7 @@ PRIMITIVE(sensor_read) {
 #if defined(CONFIG_SENSOR)
   const struct device* dev = device_at(device);
   if (dev == null) FAIL(INVALID_ARGUMENT);
+  if (!::is_sensor(dev)) FAIL(WRONG_OBJECT_TYPE);  // A label of another class.
   struct sensor_value value;
   int ret = sensor_channel_get(dev, static_cast<enum sensor_channel>(channel), &value);
   if (ret != 0) return Primitive::os_error(-ret, process);
@@ -203,13 +217,14 @@ PRIMITIVE(sensor_read) {
 }
 
 // One I2C transaction with the target at 7-bit $address on the bus $device:
-// write $write (if not null), then, with a repeated start, read $read_count
+// write $write (if not empty), then, with a repeated start, read $read_count
 // bytes (if not 0). Returns the bytes read, or null.
 PRIMITIVE(i2c_transfer) {
   ARGS(int, device, int, address, Blob, write, int, read_count);
 #if defined(CONFIG_I2C)
   const struct device* dev = device_at(device);
   if (dev == null) FAIL(INVALID_ARGUMENT);
+  if (!::is_i2c(dev)) FAIL(WRONG_OBJECT_TYPE);  // A label of another class.
   if (address < 0 || address > 0x7f || read_count < 0) FAIL(INVALID_ARGUMENT);
   if (write.length() == 0 && read_count == 0) FAIL(INVALID_ARGUMENT);
   ByteArray* result = null;
@@ -240,6 +255,7 @@ PRIMITIVE(strip_update) {
   static const int MAX_PIXELS = 64;
   const struct device* dev = device_at(device);
   if (dev == null) FAIL(INVALID_ARGUMENT);
+  if (!::is_led_strip(dev)) FAIL(WRONG_OBJECT_TYPE);  // A label of another class.
   int count = rgb.length() / 3;
   if (rgb.length() % 3 != 0 || count > MAX_PIXELS || static_cast<size_t>(count) > led_strip_length(dev)) {
     FAIL(OUT_OF_RANGE);
