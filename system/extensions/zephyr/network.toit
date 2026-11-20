@@ -21,15 +21,17 @@ import ..shared.network-base
 THREAD-ATTACH-TIMEOUT-MS_ ::= 60_000  // As ztoit's boot-time attach was.
 THREAD-ROLE-CHILD_ ::= 2  // otDeviceRole: child, router (3) and leader (4) are attached.
 WIFI-CONNECT-TIMEOUT-MS_ ::= 30_000  // Association plus DHCP; not tuned.
+BLE-CONNECT-TIMEOUT-MS_ ::= 30_000  // The bonded relay finding the advertiser; not tuned.
 LINK-THREAD_ ::= 1  // link-kind_.
 LINK-WIFI_ ::= 2
+LINK-BLE_ ::= 3
 
 /**
 net.open on Zephyr: sockets run in the client process on the VM's own
   primitives (udp_zephyr.cc), so nothing is proxied, as on the host.
-The build's link (Thread or WiFi, $link-kind_) comes up on the first open
+The build's link (Thread, WiFi or BLE, $link-kind_) comes up on the first open
   and goes down after the last close (the stock $NetworkState count). Without
-  either in the build, open throws.
+  any in the build, open throws.
 */
 class ZephyrNetworkProvider extends NetworkServiceProviderBase:
   state_ ::= NetworkState
@@ -38,13 +40,20 @@ class ZephyrNetworkProvider extends NetworkServiceProviderBase:
     super "system/network/zephyr" --major=0 --minor=2 --tags=[link-name_]
 
   connect client/int -> List:
-    state_.up: link-kind_ == LINK-WIFI_ ? WifiModule : ThreadModule
+    state_.up: link-module_
     try:
       resource := NetworkResource this client state_
       return [resource.serialize-for-rpc, NetworkService.PROXY-NONE, link-name_]
     finally: | is-exception exception |
       if is-exception:
         critical-do: state_.down
+
+link-module_ -> NetworkModule:
+  kind := link-kind_
+  if kind == LINK-THREAD_: return ThreadModule
+  if kind == LINK-WIFI_: return WifiModule
+  if kind == LINK-BLE_: return BleModule
+  throw "UNSUPPORTED"
 
 class ThreadModule implements NetworkModule:
   attached_ := false
@@ -83,11 +92,35 @@ class WifiModule implements NetworkModule:
     wifi-down_
     print "wifi: down"
 
+/**
+Datagrams over Bluetooth LE to a relay (udp_ble.cc). The radio starts with the
+  VM, so the bonded relay may already be connected; connect waits for its
+  channel. Disconnect leaves the radio and the bond alone.
+*/
+class BleModule implements NetworkModule:
+  connect -> none:
+    start := Time.monotonic-us
+    deadline := start + BLE-CONNECT-TIMEOUT-MS_ * 1_000
+    while not ble-ready_:
+      if Time.monotonic-us > deadline:
+        print "ble: relay timed out"
+        throw "ble: relay timed out"
+      sleep --ms=100
+    print "ble: relay up in $((Time.monotonic-us - start) / 1_000) ms"
+
+  disconnect -> none:
+
 link-name_ -> string:
-  return link-kind_ == LINK-WIFI_ ? "wifi" : "thread"
+  kind := link-kind_
+  if kind == LINK-WIFI_: return "wifi"
+  if kind == LINK-BLE_: return "ble"
+  return "thread"
 
 link-kind_ -> int:
   #primitive.zephyr.link-kind
+
+ble-ready_ -> bool:
+  #primitive.zephyr.ble-ready
 
 wifi-up_ -> none:
   #primitive.zephyr.wifi-up

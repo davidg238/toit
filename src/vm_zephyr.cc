@@ -21,6 +21,7 @@
 #include "event_sources/timer.h"
 #include "event_sources/zsock_zephyr.h"
 #include "event_sources/zephyr_keys.h"
+#include "event_sources/ble_udp_zephyr.h"
 
 namespace toit {
 
@@ -33,6 +34,8 @@ void VM::load_platform_event_sources() {
 #endif
 #ifdef CONFIG_NET_SOCKETS
   event_manager()->add_event_source(_new ZsockEventSource());
+#elif defined(CONFIG_BT)
+  event_manager()->add_event_source(_new BleUdpEventSource());  // UDP over the BLE relay.
 #endif
 }
 

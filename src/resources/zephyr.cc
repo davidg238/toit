@@ -51,6 +51,7 @@
 #include "../vm.h"
 
 #include "../event_sources/zephyr_keys.h"
+#include "../event_sources/ble_udp_zephyr.h"
 
 #if defined(CONFIG_WIFI)
 #include <zephyr/net/net_if.h>
@@ -605,14 +606,25 @@ PRIMITIVE(thread_down) {
 }
 
 // Which link the build carries, for the system program's network provider:
-// 0 none, 1 Thread, 2 WiFi.
+// 0 none, 1 Thread, 2 WiFi, 3 Bluetooth LE to a relay (udp_ble.cc).
 PRIMITIVE(link_kind) {
 #if defined(CONFIG_NET_L2_OPENTHREAD)
   return Smi::from(1);
 #elif defined(CONFIG_WIFI)
   return Smi::from(2);
+#elif defined(CONFIG_BT) && !defined(CONFIG_NET_SOCKETS)
+  return Smi::from(3);
 #else
   return Smi::from(0);
+#endif
+}
+
+// Whether the BLE relay's channel is open (link kind 3); net.open waits for it.
+PRIMITIVE(ble_ready) {
+#if defined(CONFIG_BT) && !defined(CONFIG_NET_SOCKETS)
+  return BOOL(BleUdpEventSource::ready());
+#else
+  FAIL(UNSUPPORTED);
 #endif
 }
 
