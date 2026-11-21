@@ -47,7 +47,13 @@ class BleUdpEventSource : public EventSource, public Thread {
   // Whether the relay's channel is open.
   static bool ready();
 
-  // A socket bound to port (0: an ephemeral port). Answers its id, or -1 with errno set.
+  // Claims a socket, not yet bound: it neither sends nor receives. Answers its
+  // id, or -1 with errno EMFILE.
+  static int create();
+  // Binds a created socket to port (0: the lowest free ephemeral port). Answers
+  // 0, or -1 with errno EBADF, EINVAL or EADDRINUSE.
+  static int bind_port(int id, int port);
+  // create and bind_port in one. Answers the id, or -1 with errno set.
   static int bind(int port);
   static int port(int id);
   // Answers len when sent or dropped (no channel: dropped, as UDP over a down

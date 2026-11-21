@@ -59,7 +59,8 @@ NET_BUF_POOL_DEFINE(ble_udp_rx_pool, 1, BT_L2CAP_SDU_BUF_SIZE(SDU_MTU), 8, NULL)
 
 static struct bt_l2cap_le_chan le_chan;
 static volatile bool chan_up;
-static int sock_port[MAX_SOCKS];  // 0 = free; under sock_lock.
+static const int UNBOUND = -1;
+static int sock_port[MAX_SOCKS];  // 0 = free, UNBOUND = created; under sock_lock.
 static K_MUTEX_DEFINE(sock_lock);
 
 // Received datagrams, whole frames, each stored as [u16 len][frame], one ring per
@@ -312,35 +313,56 @@ void BleUdpEventSource::release(int id) {
 
 bool BleUdpEventSource::ready() { return chan_up; }
 
-int BleUdpEventSource::bind(int port) {
-  if (port < 0 || port > 0xffff) { errno = EINVAL; return -1; }
+int BleUdpEventSource::create() {
   int id = -1;
   k_mutex_lock(&sock_lock, K_FOREVER);
-  bool taken = false;
   for (int i = 0; i < MAX_SOCKS; i++) {
-    if (port != 0 && sock_port[i] == port) taken = true;
+    if (sock_port[i] == 0) {
+      k_mutex_lock(&ring_lock, K_FOREVER);
+      ring_clear(i);  // Nothing stale reaches the new socket.
+      sock_port[i] = UNBOUND;
+      k_mutex_unlock(&ring_lock);
+      id = i;
+      break;
+    }
   }
-  if (!taken && port == 0) {  // The lowest ephemeral port no socket holds.
+  k_mutex_unlock(&sock_lock);
+  if (id < 0) errno = EMFILE;
+  return id;
+}
+
+int BleUdpEventSource::bind_port(int id, int port) {
+  if (port < 0 || port > 0xffff) { errno = EINVAL; return -1; }
+  int result = 0;
+  k_mutex_lock(&sock_lock, K_FOREVER);
+  if (id < 0 || id >= MAX_SOCKS || sock_port[id] != UNBOUND) {
+    errno = EBADF;  // Free, or bound already.
+    result = -1;
+  } else if (port != 0) {
+    for (int i = 0; i < MAX_SOCKS; i++) {
+      if (sock_port[i] == port) { errno = EADDRINUSE; result = -1; }
+    }
+  } else {  // The lowest ephemeral port no socket holds.
     for (port = EPHEMERAL_BASE; ; port++) {
       bool used = false;
       for (int i = 0; i < MAX_SOCKS; i++) used = used || sock_port[i] == port;
       if (!used) break;
     }
   }
-  if (!taken) {
-    for (int i = 0; i < MAX_SOCKS; i++) {
-      if (sock_port[i] == 0) {
-        k_mutex_lock(&ring_lock, K_FOREVER);
-        ring_clear(i);  // Nothing stale reaches the new socket.
-        sock_port[i] = port;
-        k_mutex_unlock(&ring_lock);
-        id = i;
-        break;
-      }
-    }
-  }
+  if (result == 0) sock_port[id] = port;
   k_mutex_unlock(&sock_lock);
-  if (id < 0) errno = taken ? EADDRINUSE : EMFILE;
+  return result;
+}
+
+int BleUdpEventSource::bind(int port) {
+  int id = create();
+  if (id < 0) return -1;
+  if (bind_port(id, port) != 0) {
+    int error = errno;
+    release(id);
+    errno = error;
+    return -1;
+  }
   return id;
 }
 
@@ -349,7 +371,7 @@ int BleUdpEventSource::port(int id) {
   k_mutex_lock(&sock_lock, K_FOREVER);
   int p = sock_port[id];
   k_mutex_unlock(&sock_lock);
-  return p;
+  return p < 0 ? 0 : p;
 }
 
 int BleUdpEventSource::send(int id, const uint8_t addr[16], int remote_port, const uint8_t* data, int len) {
@@ -358,7 +380,7 @@ int BleUdpEventSource::send(int id, const uint8_t addr[16], int remote_port, con
   int hl = ipv6_format(addr, host, sizeof host);
   k_mutex_lock(&sock_lock, K_FOREVER);
   int result = len;
-  if (id < 0 || id >= MAX_SOCKS || sock_port[id] == 0) {
+  if (id < 0 || id >= MAX_SOCKS || sock_port[id] <= 0) {  // Free or unbound.
     errno = EBADF;
     result = -1;
   } else if (chan_up) {  // Down: dropped, as UDP over a down link (rete).

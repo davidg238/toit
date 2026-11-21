@@ -69,14 +69,11 @@ static bool is_any(const Blob& address) {
   return true;
 }
 
-static Object* bind_new(UdpResourceGroup* group, int port, Process* process) {
-  ByteArray* resource_proxy = process->object_heap()->allocate_proxy();
-  if (resource_proxy == null) FAIL(ALLOCATION_FAILED);
-  int id = BleUdpEventSource::bind(port);
-  if (id < 0) return Primitive::os_error(errno, process);
+// Registers a claimed socket; frees it if that fails.
+static Object* register_new(UdpResourceGroup* group, ByteArray* resource_proxy, int id) {
   peers[id].set = false;
   IntResource* resource = group->register_id(id);
-  if (!resource) { BleUdpEventSource::release(id); FAIL(MALLOC_FAILED); }
+  if (!resource) { BleUdpEventSource::release(id); return null; }
   resource_proxy->set_external_address(resource);
   return resource_proxy;
 }
@@ -92,22 +89,36 @@ PRIMITIVE(init) {
   return proxy;
 }
 
-// The multicast constructor creates, then binds; a relay has no multicast, so
-// that path is not supported.
+// The library binds by create_socket then bind_socket (udp.toit's udp-bind_).
 PRIMITIVE(create_socket) {
   ARGS(UdpResourceGroup, resource_group);
-  USE(resource_group);
-  FAIL(UNIMPLEMENTED);
+  ByteArray* resource_proxy = process->object_heap()->allocate_proxy();
+  if (resource_proxy == null) FAIL(ALLOCATION_FAILED);
+  int id = BleUdpEventSource::create();
+  if (id < 0) return Primitive::os_error(errno, process);
+  if (!register_new(resource_group, resource_proxy, id)) FAIL(MALLOC_FAILED);
+  return resource_proxy;
 }
 
 PRIMITIVE(bind_socket) {
-  FAIL(UNIMPLEMENTED);
+  ARGS(ByteArray, proxy, IntResource, connection_resource, Blob, address, int, port);
+  USE(proxy);
+  if (!is_any(address) && address.length() != 16) FAIL(INVALID_ARGUMENT);
+  if (BleUdpEventSource::bind_port(connection_resource->id(), port) != 0) {
+    return Primitive::os_error(errno, process);
+  }
+  return process->null_object();
 }
 
 PRIMITIVE(bind) {
   ARGS(UdpResourceGroup, resource_group, Blob, address, int, port);
   if (!is_any(address) && address.length() != 16) FAIL(INVALID_ARGUMENT);
-  return bind_new(resource_group, port, process);
+  ByteArray* resource_proxy = process->object_heap()->allocate_proxy();
+  if (resource_proxy == null) FAIL(ALLOCATION_FAILED);
+  int id = BleUdpEventSource::bind(port);
+  if (id < 0) return Primitive::os_error(errno, process);
+  if (!register_new(resource_group, resource_proxy, id)) FAIL(MALLOC_FAILED);
+  return resource_proxy;
 }
 
 PRIMITIVE(connect) {
