@@ -36,6 +36,10 @@
 #if defined(CONFIG_I2C)
 #include <zephyr/drivers/i2c.h>
 #endif
+#if defined(CONFIG_UART_INTERRUPT_DRIVEN)
+#include <zephyr/drivers/uart.h>
+#include <zephyr/sys/ring_buffer.h>
+#endif
 #if defined(CONFIG_AUDIO_DMIC)
 #include <zephyr/audio/dmic.h>
 #endif
@@ -90,6 +94,38 @@ static bool is_led_strip(const struct device* dev) { return DEVICE_API_IS(led_st
 #endif
 #if defined(CONFIG_I2C)
 static bool is_i2c(const struct device* dev) { return DEVICE_API_IS(i2c, dev); }
+#endif
+#if defined(CONFIG_UART_INTERRUPT_DRIVEN)
+static bool is_uart(const struct device* dev) { return DEVICE_API_IS(uart, dev); }
+
+// One receive-only UART at a time (a sensor's line, ztoit#52). The ISR puts
+// bytes into a ring; Toit polls uart_read. One producer (the ISR) and one
+// consumer (the interpreter) need no lock. Bytes that find the ring full are
+// dropped and counted. 256 B is over 250 ms at 9600 baud against Toit's 20 ms
+// poll; not measured. Plain .bss, not RING_BUF_DECLARE: that one is __noinit,
+// which the WROOM-32 maps to its full dram1 bank (ztoit#52).
+#define UART_RX_RING_SIZE 256
+static uint8_t uart_rx_buf[UART_RX_RING_SIZE];
+static struct ring_buf uart_rx_ring;
+static const struct device* uart_rx_dev = NULL;
+static volatile uint32_t uart_rx_dropped = 0;
+
+static void uart_rx_isr(const struct device* dev, void* user_data) {
+  uart_irq_update(dev);  // Returns void from Zephyr 4.5.
+  while (uart_irq_rx_ready(dev)) {
+    uint8_t buf[32];
+    int n = uart_fifo_read(dev, buf, sizeof(buf));
+    if (n <= 0) break;
+    uart_rx_dropped += n - ring_buf_put(&uart_rx_ring, buf, n);
+  }
+}
+
+static void uart_rx_release() {
+  if (uart_rx_dev == NULL) return;
+  uart_irq_rx_disable(uart_rx_dev);
+  uart_irq_callback_set(uart_rx_dev, NULL);
+  uart_rx_dev = NULL;
+}
 #endif
 #if defined(CONFIG_AUDIO_DMIC)
 static bool is_dmic(const struct device* dev) { return DEVICE_API_IS(dmic, dev); }
@@ -280,6 +316,67 @@ static void mic_release(const struct device* dev) {
   while (dmic_read(dev, 0, &block, &size, 0) == 0) k_mem_slab_free(&mic_slab, block);
 }
 #endif
+
+// Starts receiving on a UART at baud, 8N1. Takes receiving over: a UART
+// already open, here or in another process, is closed and its bytes dropped.
+PRIMITIVE(uart_open) {
+  ARGS(int, device, int, baud);
+#if defined(CONFIG_UART_INTERRUPT_DRIVEN)
+  const struct device* dev = device_at(device);
+  if (dev == null) FAIL(INVALID_ARGUMENT);
+  if (!::is_uart(dev)) FAIL(WRONG_OBJECT_TYPE);  // A label of another class.
+  if (baud <= 0) FAIL(OUT_OF_RANGE);
+  uart_rx_release();
+  struct uart_config cfg = {};
+  cfg.baudrate = baud;
+  cfg.parity = UART_CFG_PARITY_NONE;
+  cfg.stop_bits = UART_CFG_STOP_BITS_1;
+  cfg.data_bits = UART_CFG_DATA_BITS_8;
+  cfg.flow_ctrl = UART_CFG_FLOW_CTRL_NONE;
+  int ret = uart_configure(dev, &cfg);
+  if (ret != 0) return Primitive::os_error(-ret, process);
+  ret = uart_irq_callback_set(dev, uart_rx_isr);
+  if (ret != 0) return Primitive::os_error(-ret, process);
+  ring_buf_init(&uart_rx_ring, sizeof(uart_rx_buf), uart_rx_buf);
+  uart_rx_dropped = 0;
+  uart_rx_dev = dev;
+  uart_irq_rx_enable(dev);
+  return process->null_object();
+#else
+  FAIL(UNSUPPORTED);
+#endif
+}
+
+// The bytes received since the last read, as a new ByteArray, or null if none.
+// Never waits.
+PRIMITIVE(uart_read) {
+  ARGS(int, device);
+#if defined(CONFIG_UART_INTERRUPT_DRIVEN)
+  const struct device* dev = device_at(device);
+  if (dev == null || dev != uart_rx_dev) FAIL(ALREADY_CLOSED);  // Never opened, or taken over.
+  uint32_t n = ring_buf_size_get(&uart_rx_ring);
+  if (n == 0) return process->null_object();
+  ByteArray* result = process->allocate_byte_array(n);
+  if (result == null) FAIL(ALLOCATION_FAILED);  // The bytes stay in the ring for the retry.
+  ring_buf_get(&uart_rx_ring, ByteArray::Bytes(result).address(), n);
+  return result;
+#else
+  FAIL(UNSUPPORTED);
+#endif
+}
+
+// Stops receiving and returns how many bytes were dropped because the ring was full.
+PRIMITIVE(uart_close) {
+  ARGS(int, device);
+#if defined(CONFIG_UART_INTERRUPT_DRIVEN)
+  const struct device* dev = device_at(device);
+  if (dev == null || dev != uart_rx_dev) return Smi::from(0);  // Closed already.
+  uart_rx_release();
+  return Smi::from(static_cast<word>(uart_rx_dropped & 0x3fffffff));
+#else
+  FAIL(UNSUPPORTED);
+#endif
+}
 
 // Starts the microphone, gain_db above the hardware's default gain. It takes the
 // microphone over: whatever an earlier owner left running or queued is stopped and

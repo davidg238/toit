@@ -44,6 +44,9 @@ TYPE_PRIMITIVE_ANY(mic_read)
 TYPE_PRIMITIVE_NULL(mic_stop)
 TYPE_PRIMITIVE_SMI(lc3_setup)
 TYPE_PRIMITIVE_ANY(lc3_encode)
+TYPE_PRIMITIVE_NULL(uart_open)
+TYPE_PRIMITIVE_ANY(uart_read)
+TYPE_PRIMITIVE_SMI(uart_close)
 
 }  // namespace toit::compiler
 }  // namespace toit

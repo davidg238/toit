@@ -7,8 +7,8 @@ Zephyr devices, named by devicetree node label (ztoit).
 
 The drivers are Zephyr's: any Zephyr sensor works through $Sensor, any LED
   strip through $LedStrip, any `gpio-leds` child through $Led and any
-  `gpio-keys` child through $Key, and any I2C bus through $I2c. Wiring is the
-  board's devicetree overlay.
+  `gpio-keys` child through $Key, any I2C bus through $I2c, and any UART's
+  receive side through $Uart. Wiring is the board's devicetree overlay.
 */
 
 import monitor
@@ -239,6 +239,36 @@ class Microphone:
   stop -> none:
     zephyr-mic-stop_ device_
 
+/**
+A UART that only receives, for example a sensor's serial line at devicetree
+  node label "uart2". Wiring (the RX pin) is the board's devicetree overlay.
+One UART receives at a time: opening one closes any other.
+*/
+class Uart:
+  device_/int
+  closed_/bool := false
+
+  /** Receives at $baud, 8N1, on the UART with devicetree node label $label. */
+  constructor label/string --baud/int:
+    device_ = zephyr-device-find_ label
+    zephyr-uart-open_ device_ baud
+
+  /**
+  The bytes received since the last read; waits for at least one.
+  Throws "ALREADY_CLOSED" after $close, or once another UART is opened.
+  */
+  read -> ByteArray:
+    while true:
+      bytes := zephyr-uart-read_ device_
+      if bytes: return bytes
+      sleep --ms=20
+
+  /** Stops receiving. Returns how many bytes were dropped because Toit read too slowly. */
+  close -> int:
+    if closed_: return 0
+    closed_ = true
+    return zephyr-uart-close_ device_
+
 zephyr-device-find_ label/string -> int:
   #primitive.zephyr.device-find
 
@@ -271,6 +301,15 @@ zephyr-key-state_ key/int -> int:
 
 zephyr-i2c-transfer_ device/int address/int write/ByteArray read-count/int -> ByteArray?:
   #primitive.zephyr.i2c-transfer
+
+zephyr-uart-open_ device/int baud/int -> none:
+  #primitive.zephyr.uart-open
+
+zephyr-uart-read_ device/int -> ByteArray?:
+  #primitive.zephyr.uart-read
+
+zephyr-uart-close_ device/int -> int:
+  #primitive.zephyr.uart-close
 
 zephyr-mic-start_ device/int gain-db/int -> bool:
   #primitive.zephyr.mic-start
