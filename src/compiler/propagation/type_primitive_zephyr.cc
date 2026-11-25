@@ -47,6 +47,8 @@ TYPE_PRIMITIVE_ANY(lc3_encode)
 TYPE_PRIMITIVE_NULL(uart_open)
 TYPE_PRIMITIVE_ANY(uart_read)
 TYPE_PRIMITIVE_SMI(uart_close)
+TYPE_PRIMITIVE_BOOL(speech_say)
+TYPE_PRIMITIVE_BOOL(speech_busy)
 
 }  // namespace toit::compiler
 }  // namespace toit

@@ -84,6 +84,13 @@ extern "C" __attribute__((weak)) void ztoit_link_going_down(void) {}
 // before the lease. Weak, as above.
 extern "C" __attribute__((weak)) void ztoit_link_up(void) {}
 
+// The firmware's speech synthesizer, if it has one (ktau's c/speech). say
+// copies the phrase and starts speaking it: 0, -EBUSY while a phrase is being
+// spoken, -EINVAL for a phrase it cannot speak. Weak: a firmware without one
+// links, and the primitives are then UNSUPPORTED.
+extern "C" __attribute__((weak)) int ztoit_speech_say(const uint8_t* phrase, size_t length) { return -ENOSYS; }
+extern "C" __attribute__((weak)) int ztoit_speech_busy(void) { return -ENOSYS; }
+
 // Whether a device is of a driver class. DEVICE_API_IS declares the class's
 // linker-section bounds as extern, so it must run outside namespace toit.
 #if defined(CONFIG_SENSOR)
@@ -453,6 +460,25 @@ PRIMITIVE(mic_stop) {
 #else
   FAIL(UNSUPPORTED);
 #endif
+}
+
+// Starts speaking a phrase, in the format of the firmware's synthesizer. Returns
+// false while an earlier phrase is being spoken; the caller tries again. Never waits.
+PRIMITIVE(speech_say) {
+  ARGS(Blob, phrase);
+  int ret = ztoit_speech_say(phrase.address(), phrase.length());
+  if (ret == -ENOSYS) FAIL(UNSUPPORTED);
+  if (ret == -EBUSY) return BOOL(false);
+  if (ret == -EINVAL) FAIL(INVALID_ARGUMENT);
+  if (ret != 0) return Primitive::os_error(-ret, process);
+  return BOOL(true);
+}
+
+// Whether a phrase is being spoken.
+PRIMITIVE(speech_busy) {
+  int ret = ztoit_speech_busy();
+  if (ret == -ENOSYS) FAIL(UNSUPPORTED);
+  return BOOL(ret != 0);
 }
 
 #if defined(CONFIG_LIBLC3)

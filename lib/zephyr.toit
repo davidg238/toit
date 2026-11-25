@@ -269,6 +269,27 @@ class Uart:
     closed_ = true
     return zephyr-uart-close_ device_
 
+/**
+The firmware's speech synthesizer, through its amplifier and speaker.
+A phrase is bytes in the synthesizer's own format (ktau: 4 bytes a phone).
+*/
+class Speech:
+  /**
+  Starts speaking $phrase, after any phrase still being spoken, and returns.
+  Throws "INVALID_ARGUMENT" for a phrase the synthesizer cannot speak, and
+    "UNSUPPORTED" on a firmware without a synthesizer.
+  */
+  static say phrase/ByteArray -> none:
+    while not zephyr-speech-say_ phrase: sleep --ms=20
+
+  /** Whether a phrase is being spoken. */
+  static speaking -> bool:
+    return zephyr-speech-busy_
+
+  /** Waits until nothing is being spoken. */
+  static wait -> none:
+    while speaking: sleep --ms=20
+
 zephyr-device-find_ label/string -> int:
   #primitive.zephyr.device-find
 
@@ -325,3 +346,9 @@ zephyr-lc3-setup_ bitrate/int -> int:
 
 zephyr-lc3-encode_ pcm/ByteArray generation/int -> ByteArray:
   #primitive.zephyr.lc3-encode
+
+zephyr-speech-say_ phrase/ByteArray -> bool:
+  #primitive.zephyr.speech-say
+
+zephyr-speech-busy_ -> bool:
+  #primitive.zephyr.speech-busy

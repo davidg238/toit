@@ -320,6 +320,8 @@ namespace toit {
   PRIMITIVE(uart_open, 2)                    \
   PRIMITIVE(uart_read, 1)                    \
   PRIMITIVE(uart_close, 1)                   \
+  PRIMITIVE(speech_say, 1)                   \
+  PRIMITIVE(speech_busy, 0)                  \
 
 #define MODULE_UNIX_SOCKET(PRIMITIVE)        \
   PRIMITIVE(init, 0)                         \
