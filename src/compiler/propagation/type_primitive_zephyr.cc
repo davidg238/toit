@@ -49,6 +49,7 @@ TYPE_PRIMITIVE_ANY(uart_read)
 TYPE_PRIMITIVE_SMI(uart_close)
 TYPE_PRIMITIVE_BOOL(speech_say)
 TYPE_PRIMITIVE_BOOL(speech_busy)
+TYPE_PRIMITIVE_NULL(observe)
 
 }  // namespace toit::compiler
 }  // namespace toit

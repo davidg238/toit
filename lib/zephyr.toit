@@ -290,6 +290,18 @@ class Speech:
   static wait -> none:
     while speaking: sleep --ms=20
 
+/**
+Posts $value as the observation $name, for example "vin/pm25": the firmware's
+  agent reports it as the cell `obs/<name>` at its next check-in. The last post
+  wins. Posting does not open the network: the agent checks in when the app
+  opens it.
+Throws "INVALID_ARGUMENT" for a name the agent cannot keep (empty or too long),
+  an error when the agent's table already holds as many other names as it
+  can, and "UNSUPPORTED" on a firmware without an agent.
+*/
+observe name/string value/int -> none:
+  zephyr-observe_ name value
+
 zephyr-device-find_ label/string -> int:
   #primitive.zephyr.device-find
 
@@ -352,3 +364,6 @@ zephyr-speech-say_ phrase/ByteArray -> bool:
 
 zephyr-speech-busy_ -> bool:
   #primitive.zephyr.speech-busy
+
+zephyr-observe_ name/string value/int -> none:
+  #primitive.zephyr.observe

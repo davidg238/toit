@@ -91,6 +91,14 @@ extern "C" __attribute__((weak)) void ztoit_link_up(void) {}
 extern "C" __attribute__((weak)) int ztoit_speech_say(const uint8_t* phrase, size_t length) { return -ENOSYS; }
 extern "C" __attribute__((weak)) int ztoit_speech_busy(void) { return -ENOSYS; }
 
+// The firmware's agent, if it has one (ztoit's agent/obs.c): posts value under
+// name, which the agent pushes as the cell obs/<name> at its next check-in.
+// 0, -EINVAL for a name it cannot keep, -ENOSPC when its table is full. Weak,
+// as above: without an agent the primitive is UNSUPPORTED.
+extern "C" __attribute__((weak)) int ztoit_observe(const uint8_t* name, size_t length, int64_t value) {
+  return -ENOSYS;
+}
+
 // Whether a device is of a driver class. DEVICE_API_IS declares the class's
 // linker-section bounds as extern, so it must run outside namespace toit.
 #if defined(CONFIG_SENSOR)
@@ -479,6 +487,17 @@ PRIMITIVE(speech_busy) {
   int ret = ztoit_speech_busy();
   if (ret == -ENOSYS) FAIL(UNSUPPORTED);
   return BOOL(ret != 0);
+}
+
+// Posts value as the observation name; the agent reports the last one posted.
+// Never opens the network.
+PRIMITIVE(observe) {
+  ARGS(StringOrSlice, name, int64, value);
+  int ret = ztoit_observe(name.address(), name.length(), value);
+  if (ret == -ENOSYS) FAIL(UNSUPPORTED);
+  if (ret == -EINVAL) FAIL(INVALID_ARGUMENT);
+  if (ret != 0) return Primitive::os_error(-ret, process);
+  return process->null_object();
 }
 
 #if defined(CONFIG_LIBLC3)
