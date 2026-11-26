@@ -27,8 +27,8 @@ TYPE_PRIMITIVE_NULL(strip_update)
 TYPE_PRIMITIVE_SMI(led_find)
 TYPE_PRIMITIVE_NULL(led_set)
 TYPE_PRIMITIVE_SMI(key_find)
-TYPE_PRIMITIVE_ANY(key_init)
-TYPE_PRIMITIVE_ANY(key_open)
+TYPE_PRIMITIVE_BYTE_ARRAY(key_init)
+TYPE_PRIMITIVE_BYTE_ARRAY(key_open)
 TYPE_PRIMITIVE_SMI(key_state)
 TYPE_PRIMITIVE_NULL(thread_up)
 TYPE_PRIMITIVE_SMI(thread_role)
@@ -38,14 +38,32 @@ TYPE_PRIMITIVE_BOOL(ble_ready)
 TYPE_PRIMITIVE_NULL(wifi_up)
 TYPE_PRIMITIVE_BOOL(wifi_ready)
 TYPE_PRIMITIVE_NULL(wifi_down)
-TYPE_PRIMITIVE_ANY(i2c_transfer)
+
+TYPE_PRIMITIVE(i2c_transfer) {
+  result.add_byte_array(program);
+  result.add_null(program);
+  failure.add_string(program);
+}
+
 TYPE_PRIMITIVE_BOOL(mic_start)
-TYPE_PRIMITIVE_ANY(mic_read)
+
+TYPE_PRIMITIVE(mic_read) {
+  result.add_byte_array(program);
+  result.add_null(program);
+  failure.add_string(program);
+}
+
 TYPE_PRIMITIVE_NULL(mic_stop)
 TYPE_PRIMITIVE_SMI(lc3_setup)
-TYPE_PRIMITIVE_ANY(lc3_encode)
+TYPE_PRIMITIVE_BYTE_ARRAY(lc3_encode)
 TYPE_PRIMITIVE_NULL(uart_open)
-TYPE_PRIMITIVE_ANY(uart_read)
+
+TYPE_PRIMITIVE(uart_read) {
+  result.add_byte_array(program);
+  result.add_null(program);
+  failure.add_string(program);
+}
+
 TYPE_PRIMITIVE_SMI(uart_close)
 TYPE_PRIMITIVE_BOOL(speech_say)
 TYPE_PRIMITIVE_BOOL(speech_busy)
