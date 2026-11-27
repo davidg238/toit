@@ -81,6 +81,14 @@ extern "C" {
 typedef __m128i uint128_t;
 #endif
 
+#ifdef TOIT_ZEPHYR
+// The firmware's console ring, if it has one (ztoit's agent/console.c): every
+// byte the stdout and stderr primitives write, after the serial console has
+// it; a '\n' ends a line. Weak: without one, output goes to the serial
+// console only.
+extern "C" __attribute__((weak)) void ztoit_console(const uint8_t* bytes, size_t length) {}
+#endif
+
 namespace toit {
 
 MODULE_IMPLEMENTATION(core, MODULE_CORE)
@@ -156,6 +164,13 @@ static Object* write_on_std(const uint8* bytes, size_t length, bool is_stdout, b
     fputc('\n', stream);
   }
   fflush(stream);
+#ifdef TOIT_ZEPHYR
+  ztoit_console(bytes, length);
+  if (newline) {
+    static const uint8 end[] = {'\n'};
+    ztoit_console(end, 1);
+  }
+#endif
   return process->null_object();
 }
 
