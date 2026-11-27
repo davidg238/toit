@@ -31,15 +31,15 @@ class Sensor:
 
   /** The sensor with devicetree node label $label, for example "bmp180". */
   constructor label/string:
-    device_ = zephyr-device-find_ label
+    device_ = ztoit-device-find_ label
 
   /** Takes a sample of all channels. */
   fetch -> none:
-    zephyr-sensor-fetch_ device_
+    ztoit-sensor-fetch_ device_
 
   /** The value of $channel in the last $fetch, in Zephyr's units. */
   read channel/int -> float:
-    return zephyr-sensor-read_ device_ channel
+    return ztoit-sensor-read_ device_ channel
 
 /** A Zephyr LED strip (`zephyr/drivers/led_strip.h`), such as a WS2812. */
 class LedStrip:
@@ -47,11 +47,11 @@ class LedStrip:
 
   /** The strip with devicetree node label $label, for example "rgb_led". */
   constructor label/string:
-    device_ = zephyr-device-find_ label
+    device_ = ztoit-device-find_ label
 
   /** Sets the strip's first pixels from $rgb: red, green, blue bytes per pixel. */
   set rgb/ByteArray -> none:
-    zephyr-strip-update_ device_ rgb
+    ztoit-strip-update_ device_ rgb
 
   /** Sets the first pixel to $r, $g, $b. */
   set-pixel r/int g/int b/int -> none:
@@ -67,7 +67,7 @@ class I2c:
 
   /** The bus with devicetree node label $label, for example "i2c30". */
   constructor label/string:
-    device_ = zephyr-device-find_ label
+    device_ = ztoit-device-find_ label
 
   /** The target at 7-bit $address on this bus. */
   device address/int -> I2cDevice:
@@ -88,15 +88,15 @@ class I2cDevice implements serial.Device:
 
   /** Reads $amount bytes from the target. */
   read amount/int -> ByteArray:
-    return zephyr-i2c-transfer_ bus_ address_ #[] amount
+    return ztoit-i2c-transfer_ bus_ address_ #[] amount
 
   /** Writes $bytes to the target. */
   write bytes/ByteArray -> none:
-    zephyr-i2c-transfer_ bus_ address_ bytes 0
+    ztoit-i2c-transfer_ bus_ address_ bytes 0
 
   /** Writes $bytes, then reads $amount bytes after a repeated start. */
   write-read bytes/ByteArray amount/int -> ByteArray:
-    return zephyr-i2c-transfer_ bus_ address_ bytes amount
+    return ztoit-i2c-transfer_ bus_ address_ bytes amount
 
 class I2cRegisters_ extends serial.Registers:
   device_/I2cDevice
@@ -115,11 +115,11 @@ class Led:
 
   /** The output with devicetree node label $label, for example "do0". */
   constructor label/string:
-    led_ = zephyr-led-find_ label
+    led_ = ztoit-led-find_ label
 
-  on -> none: zephyr-led-set_ led_ true
-  off -> none: zephyr-led-set_ led_ false
-  set value/bool -> none: zephyr-led-set_ led_ value
+  on -> none: ztoit-led-set_ led_ true
+  off -> none: ztoit-led-set_ led_ false
+  set value/bool -> none: ztoit-led-set_ led_ value
 
 /**
 A `gpio-keys` child: a button or switch, debounced by Zephyr.
@@ -127,23 +127,23 @@ A `gpio-keys` child: a button or switch, debounced by Zephyr.
 Changes arrive as events from Zephyr's input subsystem; no polling.
 */
 class Key:
-  static group_ ::= zephyr-key-init_
+  static group_ ::= ztoit-key-init_
 
   key_/int
   state_/monitor.ResourceState_
 
   /** The key with devicetree node label $label, for example "user_button1". */
   constructor label/string:
-    key_ = zephyr-key-find_ label
-    state_ = monitor.ResourceState_ group_ (zephyr-key-open_ group_ key_)
+    key_ = ztoit-key-find_ label
+    state_ = monitor.ResourceState_ group_ (ztoit-key-open_ group_ key_)
 
   /** Whether the key is pressed now. */
   pressed -> bool:
-    return (zephyr-key-state_ key_) & 1 == 1
+    return (ztoit-key-state_ key_) & 1 == 1
 
   /** How many times the key has been pressed since boot. */
   presses -> int:
-    return (zephyr-key-state_ key_) >> 1
+    return (ztoit-key-state_ key_) >> 1
 
   /** Waits for the next press; a press shorter than this task's wakeup still counts. */
   wait-for-press -> none:
@@ -179,7 +179,7 @@ class Lc3Encoder:
 
   /** An encoder at $bitrate bits per second, 16000 to 320000 (32 kbit/s gives 40-byte frames). */
   constructor --bitrate/int=32_000:
-    setup := zephyr-lc3-setup_ bitrate
+    setup := ztoit-lc3-setup_ bitrate
     generation_ = setup >> 9
     frame-bytes = setup & 511
 
@@ -188,7 +188,7 @@ class Lc3Encoder:
     back to back, $frame-bytes each.
   */
   encode pcm/ByteArray -> ByteArray:
-    return zephyr-lc3-encode_ pcm generation_
+    return ztoit-lc3-encode_ pcm generation_
 
 /**
 A PDM microphone, for example the one at devicetree node label "pdm20".
@@ -209,7 +209,7 @@ class Microphone:
   */
   constructor label/string --gain-db/int=0:
     if not -20 <= gain-db <= 20: throw "OUT_OF_RANGE"
-    device_ = zephyr-device-find_ label
+    device_ = ztoit-device-find_ label
     gain-db_ = gain-db
 
   /**
@@ -219,7 +219,7 @@ class Microphone:
   */
   start -> none:
     deadline := Time.monotonic-us + STALLED-MS_ * 1000
-    while not zephyr-mic-start_ device_ gain-db_:
+    while not ztoit-mic-start_ device_ gain-db_:
       if Time.monotonic-us > deadline: throw "MICROPHONE_BUSY"
       sleep --ms=10
 
@@ -230,14 +230,14 @@ class Microphone:
   read -> ByteArray:
     deadline := Time.monotonic-us + STALLED-MS_ * 1000
     while true:
-      block := zephyr-mic-read_ device_
+      block := ztoit-mic-read_ device_
       if block: return block
       if Time.monotonic-us > deadline: throw "MICROPHONE_STOPPED"
       sleep --ms=10
 
   /** Stops recording; blocks not yet read are dropped. */
   stop -> none:
-    zephyr-mic-stop_ device_
+    ztoit-mic-stop_ device_
 
 /**
 A UART that only receives, for example a sensor's serial line at devicetree
@@ -250,8 +250,8 @@ class Uart:
 
   /** Receives at $baud, 8N1, on the UART with devicetree node label $label. */
   constructor label/string --baud/int:
-    device_ = zephyr-device-find_ label
-    zephyr-uart-open_ device_ baud
+    device_ = ztoit-device-find_ label
+    ztoit-uart-open_ device_ baud
 
   /**
   The bytes received since the last read; waits for at least one.
@@ -259,7 +259,7 @@ class Uart:
   */
   read -> ByteArray:
     while true:
-      bytes := zephyr-uart-read_ device_
+      bytes := ztoit-uart-read_ device_
       if bytes: return bytes
       sleep --ms=20
 
@@ -267,7 +267,7 @@ class Uart:
   close -> int:
     if closed_: return 0
     closed_ = true
-    return zephyr-uart-close_ device_
+    return ztoit-uart-close_ device_
 
 /**
 The firmware's speech synthesizer, through its amplifier and speaker.
@@ -280,11 +280,11 @@ class Speech:
     "UNSUPPORTED" on a firmware without a synthesizer.
   */
   static say phrase/ByteArray -> none:
-    while not zephyr-speech-say_ phrase: sleep --ms=20
+    while not ztoit-speech-say_ phrase: sleep --ms=20
 
   /** Whether a phrase is being spoken. */
   static speaking -> bool:
-    return zephyr-speech-busy_
+    return ztoit-speech-busy_
 
   /** Waits until nothing is being spoken. */
   static wait -> none:
@@ -300,70 +300,70 @@ Throws "INVALID_ARGUMENT" for a name the agent cannot keep (empty or too long),
   can, and "UNSUPPORTED" on a firmware without an agent.
 */
 observe name/string value/int -> none:
-  zephyr-observe_ name value
+  ztoit-observe_ name value
 
-zephyr-device-find_ label/string -> int:
+ztoit-device-find_ label/string -> int:
   #primitive.ztoit.device-find
 
-zephyr-sensor-fetch_ device/int -> none:
+ztoit-sensor-fetch_ device/int -> none:
   #primitive.ztoit.sensor-fetch
 
-zephyr-sensor-read_ device/int channel/int -> float:
+ztoit-sensor-read_ device/int channel/int -> float:
   #primitive.ztoit.sensor-read
 
-zephyr-strip-update_ device/int rgb/ByteArray -> none:
+ztoit-strip-update_ device/int rgb/ByteArray -> none:
   #primitive.ztoit.strip-update
 
-zephyr-led-find_ label/string -> int:
+ztoit-led-find_ label/string -> int:
   #primitive.ztoit.led-find
 
-zephyr-led-set_ led/int on/bool -> none:
+ztoit-led-set_ led/int on/bool -> none:
   #primitive.ztoit.led-set
 
-zephyr-key-find_ label/string -> int:
+ztoit-key-find_ label/string -> int:
   #primitive.ztoit.key-find
 
-zephyr-key-init_:
+ztoit-key-init_:
   #primitive.ztoit.key-init
 
-zephyr-key-open_ group key/int:
+ztoit-key-open_ group key/int:
   #primitive.ztoit.key-open
 
-zephyr-key-state_ key/int -> int:
+ztoit-key-state_ key/int -> int:
   #primitive.ztoit.key-state
 
-zephyr-i2c-transfer_ device/int address/int write/ByteArray read-count/int -> ByteArray?:
+ztoit-i2c-transfer_ device/int address/int write/ByteArray read-count/int -> ByteArray?:
   #primitive.ztoit.i2c-transfer
 
-zephyr-uart-open_ device/int baud/int -> none:
+ztoit-uart-open_ device/int baud/int -> none:
   #primitive.ztoit.uart-open
 
-zephyr-uart-read_ device/int -> ByteArray?:
+ztoit-uart-read_ device/int -> ByteArray?:
   #primitive.ztoit.uart-read
 
-zephyr-uart-close_ device/int -> int:
+ztoit-uart-close_ device/int -> int:
   #primitive.ztoit.uart-close
 
-zephyr-mic-start_ device/int gain-db/int -> bool:
+ztoit-mic-start_ device/int gain-db/int -> bool:
   #primitive.ztoit.mic-start
 
-zephyr-mic-read_ device/int -> ByteArray?:
+ztoit-mic-read_ device/int -> ByteArray?:
   #primitive.ztoit.mic-read
 
-zephyr-mic-stop_ device/int -> none:
+ztoit-mic-stop_ device/int -> none:
   #primitive.ztoit.mic-stop
 
-zephyr-lc3-setup_ bitrate/int -> int:
+ztoit-lc3-setup_ bitrate/int -> int:
   #primitive.ztoit.lc3-setup
 
-zephyr-lc3-encode_ pcm/ByteArray generation/int -> ByteArray:
+ztoit-lc3-encode_ pcm/ByteArray generation/int -> ByteArray:
   #primitive.ztoit.lc3-encode
 
-zephyr-speech-say_ phrase/ByteArray -> bool:
+ztoit-speech-say_ phrase/ByteArray -> bool:
   #primitive.ztoit.speech-say
 
-zephyr-speech-busy_ -> bool:
+ztoit-speech-busy_ -> bool:
   #primitive.ztoit.speech-busy
 
-zephyr-observe_ name/string value/int -> none:
+ztoit-observe_ name/string value/int -> none:
   #primitive.ztoit.observe
