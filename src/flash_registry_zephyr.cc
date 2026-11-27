@@ -146,10 +146,15 @@ bool FlashRegistry::erase_flash_registry() {
 
 // The registry is a static RAM array: programs are installed into RAM at boot
 // and run from there (no XIP, nothing survives a reset). 128 KB holds the
-// largest program so far (soak.toit, 64 KB).
+// largest program so far (soak.toit, 64 KB); a port's Kconfig may set the size
+// (ztoit's QEMU test runs hold hundreds of programs).
 namespace toit {
 
+#ifdef CONFIG_TOIT_RAM_REGISTRY_SIZE
+static const int RAM_REGISTRY_SIZE = CONFIG_TOIT_RAM_REGISTRY_SIZE;
+#else
 static const int RAM_REGISTRY_SIZE = 128 * KB;
+#endif
 alignas(FLASH_PAGE_SIZE) static uint8 ram_registry[RAM_REGISTRY_SIZE];
 uint8* FlashRegistry::allocations_memory_ = null;
 
