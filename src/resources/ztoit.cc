@@ -239,7 +239,7 @@ class KeyResourceGroup : public ResourceGroup {
   }
 };
 
-MODULE_IMPLEMENTATION(zephyr, MODULE_ZEPHYR)
+MODULE_IMPLEMENTATION(ztoit, MODULE_ZTOIT)
 
 PRIMITIVE(device_find) {
   ARGS(cstring, label);

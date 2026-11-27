@@ -83,7 +83,7 @@ namespace toit {
   M(unix_socket, MODULE_UNIX_SOCKET)         \
   M(one_wire, MODULE_ONE_WIRE)               \
   M(watchdog, MODULE_WATCHDOG)               \
-  M(zephyr,  MODULE_ZEPHYR)  /* Last: stock module numbers stay unchanged. */ \
+  M(ztoit, MODULE_ZTOIT)  /* Last: stock module numbers stay unchanged. */ \
 
 #define MODULE_WATCHDOG(PRIMITIVE)           \
   PRIMITIVE(start, 1)                        \
@@ -308,9 +308,9 @@ namespace toit {
   PRIMITIVE(set_option, 4)                   \
   PRIMITIVE(gc, 1)                           \
 
-// Zephyr devices by devicetree node label (src/resources/zephyr.cc): generic
+// Zephyr devices by devicetree node label (src/resources/ztoit.cc): generic
 // over Zephyr's device classes, so no per-driver primitives.
-#define MODULE_ZEPHYR(PRIMITIVE)             \
+#define MODULE_ZTOIT(PRIMITIVE)             \
   PRIMITIVE(device_find, 1)                  \
   PRIMITIVE(sensor_fetch, 1)                 \
   PRIMITIVE(sensor_read, 2)                  \

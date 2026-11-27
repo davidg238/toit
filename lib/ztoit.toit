@@ -303,67 +303,67 @@ observe name/string value/int -> none:
   zephyr-observe_ name value
 
 zephyr-device-find_ label/string -> int:
-  #primitive.zephyr.device-find
+  #primitive.ztoit.device-find
 
 zephyr-sensor-fetch_ device/int -> none:
-  #primitive.zephyr.sensor-fetch
+  #primitive.ztoit.sensor-fetch
 
 zephyr-sensor-read_ device/int channel/int -> float:
-  #primitive.zephyr.sensor-read
+  #primitive.ztoit.sensor-read
 
 zephyr-strip-update_ device/int rgb/ByteArray -> none:
-  #primitive.zephyr.strip-update
+  #primitive.ztoit.strip-update
 
 zephyr-led-find_ label/string -> int:
-  #primitive.zephyr.led-find
+  #primitive.ztoit.led-find
 
 zephyr-led-set_ led/int on/bool -> none:
-  #primitive.zephyr.led-set
+  #primitive.ztoit.led-set
 
 zephyr-key-find_ label/string -> int:
-  #primitive.zephyr.key-find
+  #primitive.ztoit.key-find
 
 zephyr-key-init_:
-  #primitive.zephyr.key-init
+  #primitive.ztoit.key-init
 
 zephyr-key-open_ group key/int:
-  #primitive.zephyr.key-open
+  #primitive.ztoit.key-open
 
 zephyr-key-state_ key/int -> int:
-  #primitive.zephyr.key-state
+  #primitive.ztoit.key-state
 
 zephyr-i2c-transfer_ device/int address/int write/ByteArray read-count/int -> ByteArray?:
-  #primitive.zephyr.i2c-transfer
+  #primitive.ztoit.i2c-transfer
 
 zephyr-uart-open_ device/int baud/int -> none:
-  #primitive.zephyr.uart-open
+  #primitive.ztoit.uart-open
 
 zephyr-uart-read_ device/int -> ByteArray?:
-  #primitive.zephyr.uart-read
+  #primitive.ztoit.uart-read
 
 zephyr-uart-close_ device/int -> int:
-  #primitive.zephyr.uart-close
+  #primitive.ztoit.uart-close
 
 zephyr-mic-start_ device/int gain-db/int -> bool:
-  #primitive.zephyr.mic-start
+  #primitive.ztoit.mic-start
 
 zephyr-mic-read_ device/int -> ByteArray?:
-  #primitive.zephyr.mic-read
+  #primitive.ztoit.mic-read
 
 zephyr-mic-stop_ device/int -> none:
-  #primitive.zephyr.mic-stop
+  #primitive.ztoit.mic-stop
 
 zephyr-lc3-setup_ bitrate/int -> int:
-  #primitive.zephyr.lc3-setup
+  #primitive.ztoit.lc3-setup
 
 zephyr-lc3-encode_ pcm/ByteArray generation/int -> ByteArray:
-  #primitive.zephyr.lc3-encode
+  #primitive.ztoit.lc3-encode
 
 zephyr-speech-say_ phrase/ByteArray -> bool:
-  #primitive.zephyr.speech-say
+  #primitive.ztoit.speech-say
 
 zephyr-speech-busy_ -> bool:
-  #primitive.zephyr.speech-busy
+  #primitive.ztoit.speech-busy
 
 zephyr-observe_ name/string value/int -> none:
-  #primitive.zephyr.observe
+  #primitive.ztoit.observe

@@ -117,25 +117,25 @@ link-name_ -> string:
   return "thread"
 
 link-kind_ -> int:
-  #primitive.zephyr.link-kind
+  #primitive.ztoit.link-kind
 
 ble-ready_ -> bool:
-  #primitive.zephyr.ble-ready
+  #primitive.ztoit.ble-ready
 
 wifi-up_ -> none:
-  #primitive.zephyr.wifi-up
+  #primitive.ztoit.wifi-up
 
 wifi-ready_ -> bool:
-  #primitive.zephyr.wifi-ready
+  #primitive.ztoit.wifi-ready
 
 wifi-down_ -> none:
-  #primitive.zephyr.wifi-down
+  #primitive.ztoit.wifi-down
 
 thread-up_ -> none:
-  #primitive.zephyr.thread-up
+  #primitive.ztoit.thread-up
 
 thread-role_ -> int:
-  #primitive.zephyr.thread-role
+  #primitive.ztoit.thread-role
 
 thread-down_ disable/bool -> bool:
-  #primitive.zephyr.thread-down
+  #primitive.ztoit.thread-down

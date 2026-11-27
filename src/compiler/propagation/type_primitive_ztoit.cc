@@ -18,7 +18,7 @@
 namespace toit {
 namespace compiler {
 
-MODULE_TYPES(zephyr, MODULE_ZEPHYR)
+MODULE_TYPES(ztoit, MODULE_ZTOIT)
 
 TYPE_PRIMITIVE_SMI(device_find)
 TYPE_PRIMITIVE_NULL(sensor_fetch)

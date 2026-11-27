@@ -26,7 +26,7 @@
 namespace toit {
 
 // Key changes from Zephyr's input subsystem (gpio-keys). The key table and its
-// input callback live in resources/zephyr.cc; a key's resource id is its index
+// input callback live in resources/ztoit.cc; a key's resource id is its index
 // in that table. Key state is kept under a spinlock even before the VM starts,
 // so no press is lost to start-up. Zephyr's input thread is not a Toit thread
 // and must not take Toit locks: it marks the key pending and gives a semaphore,
