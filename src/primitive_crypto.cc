@@ -43,7 +43,9 @@ extern "C" int mbedtls_hardware_poll(void* data, unsigned char* output,
 #include "primitive.h"
 #include "process.h"
 #include "resource.h"
+#if MBEDTLS_VERSION_MAJOR < 4
 #include "resources/tls.h"
+#endif
 #include "sha1.h"
 #include "blake2s.h"
 #include "sha.h"
@@ -326,7 +328,7 @@ class AeadContext : public SimpleResource {
   inline void increment_length(word by) { length_ += by; }
   inline uint8* buffered_data() { return buffered_data_; }
   inline word number_of_buffered_bytes() const { return length_ & (BLOCK_SIZE - 1); }
-  word update(word size, const uint8* input_data, uint8* output_data, uword* output_length = null);
+  word update(word size, const uint8* input_data, uint8* output_data, size_t* output_length = null);
   word finish(uint8* output_data, word size);
 
  private:
@@ -341,8 +343,8 @@ class AeadContext : public SimpleResource {
   };
 };
 
-word AeadContext::update(word size, const uint8* input_data, uint8* output_data, uword* output_length) {
-  uword dummy;
+word AeadContext::update(word size, const uint8* input_data, uint8* output_data, size_t* output_length) {
+  size_t dummy;
   if (output_length == null) {
     ASSERT(size == Utils::round_down(size, BLOCK_SIZE));
     output_length = &dummy;
@@ -370,7 +372,7 @@ word AeadContext::finish(uint8* output_data, word size) {
   switch (cipher_id_) {
     case MBEDTLS_CIPHER_ID_AES:
 #if MBEDTLS_VERSION_MAJOR >= 3
-      uword output_length;
+      size_t output_length;
       return mbedtls_gcm_finish(&gcm_context_, null, 0, &output_length, output_data, size);
 #else
       return mbedtls_gcm_finish(&gcm_context_, output_data, size);
@@ -386,10 +388,30 @@ word AeadContext::finish(uint8* output_data, word size) {
 }
 
 
+#if MBEDTLS_VERSION_MAJOR < 4
 class MbedTlsResourceGroup;
 
 // From resources/tls.cc.
 extern Object* tls_error(BaseMbedTlsSocket* group, Process* process, int err);
+#else
+// As resources/tls.h, which needs Mbed TLS's X.509 and SSL.
+enum AeadAlgorithmType {
+  ALGORITHM_AES_GCM = 0,
+  ALGORITHM_CHACHA20_POLY1305 = 1,
+  NUMBER_OF_ALGORITHM_TYPES = 2
+};
+
+// Mbed TLS 4 (the Zephyr port) has no resources/tls.cc: a failed cipher call
+// is reported by its code, as tls_error does on small platforms.
+static Object* tls_error(void* socket, Process* process, int err) {
+  if (err == PSA_ERROR_INSUFFICIENT_MEMORY) FAIL(MALLOC_FAILED);
+  char buffer[40];
+  snprintf(buffer, sizeof(buffer), "Mbedtls error -0x%04x", -err);
+  String* str = process->allocate_string(buffer);
+  if (str == null) FAIL(ALLOCATION_FAILED);
+  return Primitive::mark_as_error(str);
+}
+#endif
 
 AeadContext::~AeadContext(){
   switch (cipher_id_) {
@@ -620,7 +642,7 @@ PRIMITIVE(aead_finish) {
   if (result == null) FAIL(ALLOCATION_FAILED);
   ByteArray::Bytes result_bytes(result);
 
-  uword rest_output = 0;
+  size_t rest_output = 0;
   int ok = context->update(rest, context->buffered_data(), result_bytes.address(), &rest_output);
   if (ok != 0) return tls_error(null, process, ok);
 
@@ -643,7 +665,7 @@ PRIMITIVE(aead_verify) {
   if (verification_tag.length() != AeadContext::TAG_SIZE) FAIL(INVALID_ARGUMENT);
   if (rest.length() < context->number_of_buffered_bytes()) FAIL(INVALID_ARGUMENT);
 
-  uword rest_output = 0;
+  size_t rest_output = 0;
   int ok = context->update(context->number_of_buffered_bytes(), context->buffered_data(), rest.address(), &rest_output);
   if (ok != 0) return tls_error(null, process, ok);
 
@@ -775,6 +797,7 @@ PRIMITIVE(aes_ecb_close) {
 }
 
 
+#if MBEDTLS_VERSION_MAJOR < 4
 static int rsa_rng(void* /*ctx*/, unsigned char* buffer, size_t len) {
 #if defined(TOIT_ESP32)
   esp_fill_random(buffer, len);
@@ -1581,6 +1604,28 @@ PRIMITIVE(ec_compute_shared_secret) {
   result->resize_external(process, glen);
   return result;
 }
+#else
+// Mbed TLS 4 dropped the pk calls above (pk_setup, pk_rsa, pk_ec, pk_can_do,
+// pk_encrypt, pk_decrypt; pk_parse_key and pk_sign lost their RNG) for PSA:
+// RSA and EC keys are not implemented on the Zephyr port.
+PRIMITIVE(rsa_generate_init) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(rsa_generate_start) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(rsa_generate_finish) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(rsa_generate_close) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(rsa_generate) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(rsa_sign) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(rsa_verify) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(rsa_get_private_key_der) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(rsa_get_public_key_der) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(rsa_encrypt) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(rsa_decrypt) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(ec_generate_key) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(ec_sign) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(ec_verify) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(ec_get_private_key_der) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(ec_get_public_key_der) { FAIL(UNIMPLEMENTED); }
+PRIMITIVE(ec_compute_shared_secret) { FAIL(UNIMPLEMENTED); }
+#endif  // MBEDTLS_VERSION_MAJOR < 4
 }
 
 #endif

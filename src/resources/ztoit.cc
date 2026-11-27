@@ -748,7 +748,8 @@ PRIMITIVE(thread_down) {
 }
 
 // Which link the build carries, for the system program's network provider:
-// 0 none, 1 Thread, 2 WiFi, 3 Bluetooth LE to a relay (udp_ble.cc).
+// 0 none, 1 Thread, 2 WiFi, 3 Bluetooth LE to a relay (udp_ble.cc), 4 an IP
+// interface Zephyr brings up itself (loopback, Ethernet; CONFIG_TOIT_LINK_IP).
 PRIMITIVE(link_kind) {
 #if defined(CONFIG_NET_L2_OPENTHREAD)
   return Smi::from(1);
@@ -756,6 +757,8 @@ PRIMITIVE(link_kind) {
   return Smi::from(2);
 #elif defined(CONFIG_BT) && !defined(CONFIG_NET_SOCKETS)
   return Smi::from(3);
+#elif defined(CONFIG_TOIT_LINK_IP)
+  return Smi::from(4);
 #else
   return Smi::from(0);
 #endif

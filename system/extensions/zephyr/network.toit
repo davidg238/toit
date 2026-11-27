@@ -25,11 +25,12 @@ BLE-CONNECT-TIMEOUT-MS_ ::= 30_000  // The bonded relay finding the advertiser; 
 LINK-THREAD_ ::= 1  // link-kind_.
 LINK-WIFI_ ::= 2
 LINK-BLE_ ::= 3
+LINK-IP_ ::= 4
 
 /**
 net.open on Zephyr: sockets run in the client process on the VM's own
   primitives (udp_zephyr.cc), so nothing is proxied, as on the host.
-The build's link (Thread, WiFi or BLE, $link-kind_) comes up on the first open
+The build's link (Thread, WiFi, BLE or IP, $link-kind_) comes up on the first open
   and goes down after the last close (the stock $NetworkState count). Without
   any in the build, open throws.
 */
@@ -53,6 +54,7 @@ link-module_ -> NetworkModule:
   if kind == LINK-THREAD_: return ThreadModule
   if kind == LINK-WIFI_: return WifiModule
   if kind == LINK-BLE_: return BleModule
+  if kind == LINK-IP_: return IpModule
   throw "UNSUPPORTED"
 
 class ThreadModule implements NetworkModule:
@@ -110,10 +112,20 @@ class BleModule implements NetworkModule:
 
   disconnect -> none:
 
+/**
+An IP interface Zephyr brings up itself (loopback, Ethernet: the QEMU test
+  runs, ztoit#61): open and close leave it alone.
+*/
+class IpModule implements NetworkModule:
+  connect -> none:
+
+  disconnect -> none:
+
 link-name_ -> string:
   kind := link-kind_
   if kind == LINK-WIFI_: return "wifi"
   if kind == LINK-BLE_: return "ble"
+  if kind == LINK-IP_: return "ip"
   return "thread"
 
 link-kind_ -> int:
