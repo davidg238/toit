@@ -22,6 +22,8 @@
 // (os_ec618.cc, backed by rngGenRandom).
 extern "C" int mbedtls_hardware_poll(void* data, unsigned char* output,
                                      size_t len, size_t* olen);
+#elif defined(TOIT_ZEPHYR)
+#include <zephyr/random/random.h>
 #else
 #include <random>
 #endif
@@ -59,6 +61,16 @@ PRIMITIVE(random) {
       filled != static_cast<size_t>(size)) {
     FAIL(ERROR);
   }
+#elif defined(TOIT_ZEPHYR)
+  // Zephyr's CSPRNG, backed by the board's entropy driver. std::random_device
+  // is not an option: on Zephyr's libc it gives the same bytes every time.
+  // A build without a secure source (no entropy driver, or the test CSPRNG)
+  // fails here rather than hand out predictable bytes.
+#if defined(CONFIG_CSPRNG_ENABLED) && !defined(CONFIG_TEST_CSPRNG_GENERATOR)
+  if (sys_csrand_get(bytes.address(), size) != 0) FAIL(ERROR);
+#else
+  FAIL(UNSUPPORTED);
+#endif
 #else
   // The std::random_device is mapped to /dev/urandom on Linux/macOS and to
   // a cryptographic API on Windows.
