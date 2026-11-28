@@ -11,6 +11,9 @@ const device* zephyr_gpio_port(int num);
 bool zephyr_pin_is_restricted(int num);
 int zephyr_pin_claim(int num);
 void zephyr_pin_release(int num);
+// Gives up the claim without reconfiguring the pin: for a bus pin, which the
+// controller's pinctrl routes and a shared devicetree user may still need.
+void zephyr_pin_unclaim(int num);
 
 // Transactional ownership. A peripheral keeps its pins until native teardown
 // finishes. The internal -1 sentinel represents an omitted optional pin.

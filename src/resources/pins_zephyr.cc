@@ -38,5 +38,9 @@ void zephyr_pin_release(int num) {
   if (result != 0) FATAL("cannot release GPIO pin: %d", result);
   claimed[num / 32] &= ~BIT(num % 32);
 }
+void zephyr_pin_unclaim(int num) {
+  Locker locker(OS::global_mutex());
+  claimed[num / 32] &= ~BIT(num % 32);
+}
 }  // namespace toit
 #endif
