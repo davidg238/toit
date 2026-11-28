@@ -43,14 +43,6 @@ static I2cController controllers[] = {
 
 static const uint32_t DONE = 1;
 
-// The library encodes a gpio.Pin as -(num + 2): the Pin object holds the
-// claim, so the bus must not take it (gpio.to-pin-num_). An int is a pin the
-// bus claims itself.
-static int decode_pin(int encoded, bool* owned) {
-  *owned = encoded >= 0;
-  return encoded >= 0 ? encoded : -encoded - 2;
-}
-
 class I2cDeviceResource;
 
 // One open controller. A transfer runs to completion in start(); its result
@@ -66,15 +58,12 @@ class I2cBusResource : public ZephyrResource {
     // Bus pins are released without reconfiguring them: the controller's
     // pinctrl keeps routing them, for the next open and for a devicetree
     // device on the same controller.
-    for (int i = 0; i < 2; i++) if (owned_[i]) zephyr_pin_unclaim(pins_[i]);
+    for (int i = 0; i < claimed_; i++) zephyr_pin_unclaim(pins_[i]);
     if (controller_) controller_->open = false;
   }
 
   // Finds the controller the board gave these pins and claims them.
-  int open(int sda_encoded, int scl_encoded) {
-    bool owned[2];
-    int sda = decode_pin(sda_encoded, &owned[0]);
-    int scl = decode_pin(scl_encoded, &owned[1]);
+  int open(int sda, int scl) {
     I2cController* match = null;
     for (auto& c : controllers) if (c.sda == sda && c.scl == scl) match = &c;
     if (!match) return -EINVAL;
@@ -82,11 +71,9 @@ class I2cBusResource : public ZephyrResource {
     if (!device_is_ready(match->dev)) return -ENODEV;
     pins_[0] = sda;
     pins_[1] = scl;
-    for (int i = 0; i < 2; i++) {
-      if (!owned[i]) continue;
-      int result = zephyr_pin_claim(pins_[i]);
+    for (; claimed_ < 2; claimed_++) {
+      int result = zephyr_pin_claim(pins_[claimed_]);
       if (result != 0) return result;
-      owned_[i] = true;
     }
     controller_ = match;
     controller_->open = true;
@@ -157,7 +144,7 @@ class I2cBusResource : public ZephyrResource {
  private:
   I2cController* controller_ = null;
   int pins_[2] = {-1, -1};
-  bool owned_[2] = {false, false};
+  int claimed_ = 0;
   I2cDeviceResource* owner_ = null;
   bool active_ = false;
   uint8_t* buffer_ = null;
@@ -205,11 +192,14 @@ PRIMITIVE(init) {
 }
 
 // The pins select the controller; pinctrl has routed them since boot, and
-// sets their pulls, so pull_up is not used.
+// sets their pulls, so pull_up is not used. Pins are numbers only: the
+// library encodes a gpio.Pin as a negative number, and is refused before the
+// pins are matched. A Pin configures its pin as GPIO, and closing it
+// disconnects the pin, which kills the controller until reboot (ztoit#62).
 PRIMITIVE(bus_create) {
   ARGS(I2cResourceGroup, group, int, sda, int, scl, bool, pull_up);
   USE(pull_up);
-  if (sda == -1 || scl == -1) FAIL(INVALID_ARGUMENT);
+  if (sda < 0 || scl < 0) FAIL(INVALID_ARGUMENT);
   ByteArray* proxy = process->object_heap()->allocate_proxy();
   if (!proxy) FAIL(ALLOCATION_FAILED);
   auto bus = _new I2cBusResource(group);
