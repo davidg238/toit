@@ -56,15 +56,6 @@ TYPE_PRIMITIVE(mic_read) {
 TYPE_PRIMITIVE_NULL(mic_stop)
 TYPE_PRIMITIVE_SMI(lc3_setup)
 TYPE_PRIMITIVE_BYTE_ARRAY(lc3_encode)
-TYPE_PRIMITIVE_NULL(uart_open)
-
-TYPE_PRIMITIVE(uart_read) {
-  result.add_byte_array(program);
-  result.add_null(program);
-  failure.add_string(program);
-}
-
-TYPE_PRIMITIVE_SMI(uart_close)
 TYPE_PRIMITIVE_BOOL(speech_say)
 TYPE_PRIMITIVE_BOOL(speech_busy)
 TYPE_PRIMITIVE_NULL(observe)

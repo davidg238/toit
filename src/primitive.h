@@ -335,9 +335,6 @@ namespace toit {
   PRIMITIVE(mic_stop, 1)                     \
   PRIMITIVE(lc3_setup, 1)                    \
   PRIMITIVE(lc3_encode, 2)                   \
-  PRIMITIVE(uart_open, 2)                    \
-  PRIMITIVE(uart_read, 1)                    \
-  PRIMITIVE(uart_close, 1)                   \
   PRIMITIVE(speech_say, 1)                   \
   PRIMITIVE(speech_busy, 0)                  \
   PRIMITIVE(observe, 2)                      \

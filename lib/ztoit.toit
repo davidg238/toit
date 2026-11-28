@@ -7,12 +7,13 @@ Zephyr devices, named by devicetree node label (ztoit).
 
 The drivers are Zephyr's: any Zephyr sensor works through $Sensor, any LED
   strip through $LedStrip, any `gpio-leds` child through $Led and any
-  `gpio-keys` child through $Key, any I2C bus through $I2c, and any UART's
+  `gpio-keys` child through $Key, any I2C bus through $I2c, and a UART's
   receive side through $Uart. Wiring is the board's devicetree overlay.
 */
 
 import monitor
 import serial
+import uart
 
 /**
 A Zephyr sensor (`zephyr/drivers/sensor.h`), such as a `bosch,bmp180`.
@@ -241,33 +242,43 @@ class Microphone:
 
 /**
 A UART that only receives, for example a sensor's serial line at devicetree
-  node label "uart2". Wiring (the RX pin) is the board's devicetree overlay.
-One UART receives at a time: opening one closes any other.
+  node label "uart2": Toit's $uart.Port opened by that label, so the board
+  needs the `toit,platform` node and a `ztoit,buses` child for the UART.
+  Wiring (the RX pin) is the board's devicetree overlay.
+A second open of the same UART throws "ALREADY_IN_USE".
 */
 class Uart:
-  device_/int
-  closed_/bool := false
+  port_/uart.Port
+  dropped_/int? := null  // The count at $close.
 
   /** Receives at $baud, 8N1, on the UART with devicetree node label $label. */
   constructor label/string --baud/int:
-    device_ = ztoit-device-find_ label
-    ztoit-uart-open_ device_ baud
+    port_ = uart.Port label --baud-rate=baud
 
   /**
   The bytes received since the last read; waits for at least one.
-  Throws "ALREADY_CLOSED" after $close, or once another UART is opened.
+  Throws "ALREADY_CLOSED" after $close.
   */
   read -> ByteArray:
-    while true:
-      bytes := ztoit-uart-read_ device_
-      if bytes: return bytes
-      sleep --ms=20
+    bytes := port_.read
+    if not bytes: throw "ALREADY_CLOSED"
+    return bytes
 
-  /** Stops receiving. Returns how many bytes were dropped because Toit read too slowly. */
+  /**
+  How many bytes were lost so far, at least: those that found the receive
+    buffer full because Toit read too slowly, and one for each overrun of the
+    UART's own FIFO. Never reset.
+  */
+  dropped -> int:
+    if dropped_: return dropped_
+    return port_.errors
+
+  /** Stops receiving. Returns $dropped. */
   close -> int:
-    if closed_: return 0
-    closed_ = true
-    return ztoit-uart-close_ device_
+    if not dropped_:
+      dropped_ = port_.errors
+      port_.close
+    return dropped_
 
 /**
 The firmware's speech synthesizer, through its amplifier and speaker.
@@ -334,15 +345,6 @@ ztoit-key-state_ key/int -> int:
 
 ztoit-i2c-transfer_ device/int address/int write/ByteArray read-count/int -> ByteArray?:
   #primitive.ztoit.i2c-transfer
-
-ztoit-uart-open_ device/int baud/int -> none:
-  #primitive.ztoit.uart-open
-
-ztoit-uart-read_ device/int -> ByteArray?:
-  #primitive.ztoit.uart-read
-
-ztoit-uart-close_ device/int -> int:
-  #primitive.ztoit.uart-close
 
 ztoit-mic-start_ device/int gain-db/int -> bool:
   #primitive.ztoit.mic-start
