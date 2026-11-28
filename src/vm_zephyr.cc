@@ -23,12 +23,21 @@
 #include "event_sources/zephyr_keys.h"
 #include "event_sources/ble_udp_zephyr.h"
 
+#include <zephyr/devicetree.h>
+#if DT_HAS_COMPAT_STATUS_OKAY(toit_platform)
+#include "event_sources/zephyr.h"
+#endif
+
 namespace toit {
 
-// Timers, key changes (Zephyr input), and socket readiness when the build has
-// a network stack.
+// Timers, key changes (Zephyr input), socket readiness when the build has
+// a network stack, and GPIO edges when the board has a toit,platform node
+// (resources/gpio_zephyr.cc, ztoit#62).
 void VM::load_platform_event_sources() {
   event_manager()->add_event_source(_new TimerEventSource());
+#if DT_HAS_COMPAT_STATUS_OKAY(toit_platform)
+  event_manager()->add_event_source(_new ZephyrEventSource());
+#endif
 #ifdef CONFIG_INPUT
   event_manager()->add_event_source(_new ZephyrKeyEventSource());
 #endif

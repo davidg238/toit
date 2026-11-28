@@ -1,0 +1,13 @@
+// Copyright (C) 2026 Toit contributors.
+// Use of this source code is governed by the LGPL-2.1 license in LICENSE.
+#pragma once
+#include "top.h"
+#ifdef TOIT_ZEPHYR
+namespace toit {
+class Object;
+class Process;
+// Converts a negative Zephyr errno to a Toit error. Callers handle contextual
+// meanings (for example EPERM for an invalid SPI state) before this fallback.
+Object* zephyr_error(int error, Process* process);
+}  // namespace toit
+#endif
